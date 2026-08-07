@@ -16,7 +16,7 @@
 #define __BSP_USB_H
 
 /* Includes ----------------------------------------------------------------- */
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 
 /* Defines ------------------------------------------------------------------ */
 #define USB_BUFF_SIZE   (APP_RX_DATA_SIZE/2)	/* USB缓冲区大小 */

@@ -11,9 +11,10 @@
 #include "chassis_task.h"
 
 #include "DJI_Motor.h"
+#include "FreeRTOS.h"
 #include "Remote_Control.h"
 #include "bsp_dwt.h"
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "fdcan.h"
 #include "pid.h"
 #include "rc_task.h"

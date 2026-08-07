@@ -1,7 +1,7 @@
 #ifndef __USER_SYS_CONFIG_H
 #define __USER_SYS_CONFIG_H
 
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "user_sys_config.h"
 #include <stm32h7xx.h>
 

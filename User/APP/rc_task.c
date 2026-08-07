@@ -19,7 +19,7 @@
 #include "FreeRTOS.h"
 #include "Remote_Control.h"
 #include "bsp_dwt.h"
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "task.h"
 #include "usart.h"
 #include <string.h>
@@ -63,8 +63,7 @@ static Dbg_t g_rc_debug = {
     {0},
 };
 /** @brief 串行化任务上下文中的调试帧编码与 UART DMA 启动。 */
-osMutexDef(RcDebugMutex);
-static osMutexId g_rc_debug_mutex;
+static osMutexId_t g_rc_debug_mutex;
 
 static uint8_t g_rc_dma_rx_buffer[RC_DMA_BUFFER_COUNT]
                                   [SBUS_RX_BUF_LEN]
@@ -101,7 +100,7 @@ HAL_StatusTypeDef RC_Task_Init(void)
 {
     if (g_rc_debug_mutex == NULL)
     {
-        g_rc_debug_mutex = osMutexCreate(osMutex(RcDebugMutex));
+        g_rc_debug_mutex = osMutexNew(NULL);
         if (g_rc_debug_mutex == NULL)
         {
             return HAL_ERROR;
@@ -144,7 +143,7 @@ DbgRet RC_Task_DebugSendArgs(const char *name, double value, ...)
     va_list arguments;
 
     if ((g_rc_debug_mutex == NULL) ||
-        (osMutexWait(g_rc_debug_mutex, osWaitForever) != osOK))
+        (osMutexAcquire(g_rc_debug_mutex, osWaitForever) != osOK))
     {
         return DBG_IO_ERR;
     }

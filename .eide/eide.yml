@@ -122,7 +122,7 @@ virtualFolder:
             - path: Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c
             - path: Middlewares/Third_Party/FreeRTOS/Source/tasks.c
             - path: Middlewares/Third_Party/FreeRTOS/Source/timers.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS/cmsis_os.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c
             - path: Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c
             - path: User/ThirdParty/FreeRTOS/ARM_CM4F_AC6/port.c
           folders: []
@@ -182,7 +182,8 @@ targets:
         - Drivers/CMSIS/Include
         - Drivers/CMSIS/DSP/Include
         - Middlewares/Third_Party/FreeRTOS/Source/include
-        - Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS
+        - Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
+        - Drivers/CMSIS/RTOS2/Include
         - User/ThirdParty/FreeRTOS/ARM_CM4F_AC6
         - User/Algorithm/EKF
         - User/Algorithm/kalman

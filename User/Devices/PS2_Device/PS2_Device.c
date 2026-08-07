@@ -1,4 +1,6 @@
 #include "PS2_Device.h"
+#include "FreeRTOS.h"
+#include "task.h"
 
 PS2_Info_Typedef PS2_Info = {
     .Set = {

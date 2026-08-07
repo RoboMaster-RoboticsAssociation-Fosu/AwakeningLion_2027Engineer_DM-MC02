@@ -1,7 +1,7 @@
 #ifndef __PS2_DEVICE_H__
 #define __PS2_DEVICE_H__
 
-#include "cmsis_os.h"
+#include "cmsis_os2.h"
 #include "usart.h"
 #include "gpio.h"
 #include "bsp_dwt.h"
