@@ -1,0 +1,346 @@
+version: "4.1"
+name: CtrlBoard-H7_IMU
+type: ARM
+deviceName: STM32H723VGTx
+packDir: .pack/Keil/STM32H7xx_DFP.4.1.0
+srcDirs: []
+virtualFolder:
+  name: <virtual_root>
+  files: []
+  folders:
+    - name: Application
+      files: []
+      folders:
+        - name: MDK-ARM
+          files:
+            - path: MDK-ARM/startup_stm32h723xx.s
+          folders: []
+        - name: User
+          files: []
+          folders:
+            - name: Core
+              files:
+                - path: Core/Src/main.c
+                - path: Core/Src/gpio.c
+                - path: Core/Src/freertos.c
+                - path: Core/Src/dma.c
+                - path: Core/Src/fdcan.c
+                - path: Core/Src/spi.c
+                - path: Core/Src/tim.c
+                - path: Core/Src/usart.c
+                - path: Core/Src/stm32h7xx_it.c
+                - path: Core/Src/stm32h7xx_hal_msp.c
+                - path: Core/Src/stm32h7xx_hal_timebase_tim.c
+              folders: []
+            - name: USB_DEVICE
+              files: []
+              folders:
+                - name: App
+                  files:
+                    - path: USB_DEVICE/App/usb_device.c
+                    - path: USB_DEVICE/App/usbd_desc.c
+                    - path: USB_DEVICE/App/usbd_cdc_if.c
+                  folders: []
+                - name: Target
+                  files:
+                    - path: USB_DEVICE/Target/usbd_conf.c
+                  folders: []
+    - name: Drivers
+      files: []
+      folders:
+        - name: STM32H7xx_HAL_Driver
+          files:
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usb.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_gpio.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_hsem.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_mdma.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_exti.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart.c
+            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c
+          folders: []
+        - name: CMSIS
+          files:
+            - path: Core/Src/system_stm32h7xx.c
+          folders: []
+    - name: Device
+      files:
+        - path: User/Devices/BMI088/BMI088driver.c
+        - path: User/Devices/BMI088/BMI088Middleware.c
+        - path: User/Devices/Remote_Control/Remote_Control.c
+        - path: User/Devices/Button/Button.c
+        - path: User/Devices/DJI_Motor/DJI_Motor.c
+        - path: User/Devices/Unitree_Motor/Unitree_Motor.c
+        - path: User/Devices/DM_Motor/DM_Motor.c
+        - path: User/Devices/PC_Comm/PC_Comm.c
+        - path: User/Devices/PS2_Device/PS2_Device.c
+        - path: User/Devices/HWT6033/wit_c_sdk.c
+        - path: User/Devices/HWT6033/HWT6033.c
+      folders: []
+    - name: Algorithm
+      files:
+        - path: User/Algorithm/mahony/mahony_filter.c
+        - path: User/Algorithm/EKF/QuaternionEKF.c
+        - path: User/Algorithm/VMC/VMC_calc.c
+        - path: User/Algorithm/kalman/kalman_filter.c
+        - path: User/Lib/user_lib.c
+        - path: User/Algorithm/PID/pid.c
+        - path: User/Algorithm/FIFO/FIFO.c
+        - path: User/Algorithm/CRC/CRC.c
+      folders: []
+    - name: DSP
+      files:
+        - path: Drivers/CMSIS/DSP/Lib/ARM/arm_cortexM7lfdp_math.lib
+      folders: []
+    - name: Middlewares
+      files: []
+      folders:
+        - name: FreeRTOS
+          files:
+            - path: Middlewares/Third_Party/FreeRTOS/Source/croutine.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/event_groups.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/list.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/queue.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/tasks.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/timers.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS/cmsis_os.c
+            - path: Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c
+            - path: User/ThirdParty/FreeRTOS/ARM_CM4F_AC6/port.c
+          folders: []
+        - name: USB_Device_Library
+          files:
+            - path: Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c
+            - path: Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c
+            - path: Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c
+            - path: Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+          folders: []
+    - name: APP
+      files:
+        - path: User/APP/INS_task.c
+        - path: User/APP/chassis_task.c
+        - path: User/APP/rc_task.c
+      folders: []
+    - name: Protocol
+      files:
+        - path: User/Protocol/DbgDisp/DbgDisp.c
+        - path: User/Protocol/VOFA/vofa.c
+      folders: []
+    - name: bsp
+      files:
+        - path: User/bsp/bsp_dwt.c
+        - path: User/Bsp/bsp_PWM.c
+        - path: User/Bsp/bsp_uart.c
+        - path: User/Bsp/bsp_can.c
+        - path: User/Bsp/bsp_usb.c
+      folders: []
+    - name: Controller
+      files:
+        - path: User/Controller/controller.c
+      folders: []
+    - name: Config
+      files:
+        - path: User/Config/user_sys_config.h
+      folders: []
+    - name: ::CMSIS
+      files: []
+      folders: []
+dependenceList: []
+outDir: build
+miscInfo:
+  uid: 6988facf8a48fd82250cd7719ea7bcd6
+targets:
+  CtrlBoard-H7_IMU:
+    cppPreprocessAttrs:
+      defineList:
+        - USE_HAL_DRIVER
+        - STM32H723xx
+      incList:
+        - .
+        - Core/Inc
+        - Drivers/STM32H7xx_HAL_Driver/Inc
+        - Drivers/STM32H7xx_HAL_Driver/Inc/Legacy
+        - Drivers/CMSIS/Device/ST/STM32H7xx/Include
+        - Drivers/CMSIS/Include
+        - Drivers/CMSIS/DSP/Include
+        - Middlewares/Third_Party/FreeRTOS/Source/include
+        - Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS
+        - User/ThirdParty/FreeRTOS/ARM_CM4F_AC6
+        - User/Algorithm/EKF
+        - User/Algorithm/kalman
+        - User/Algorithm/mahony
+        - User/APP
+        - User/Bsp
+        - User/Devices/BMI088
+        - User/Devices/DM_Motor
+        - User/Algorithm/VMC
+        - User/Controller
+        - User/Lib
+        - User/Algorithm/PID
+        - User/Algorithm/filter
+        - User/Devices/Remote_Control
+        - User/Devices/Button
+        - User/Devices/DJI_Motor
+        - User/Config
+        - User/Devices/Unitree_Motor
+        - User/Algorithm/FIFO
+        - User/Algorithm/CRC
+        - USB_DEVICE/App
+        - USB_DEVICE/Target
+        - Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+        - Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+        - User/Devices/PC_Comm
+        - User/Devices/PS2_Device
+        - User/Protocol/DbgDisp
+        - User/Protocol/VOFA
+        - User/Devices/HWT6033
+        - .cmsis/include
+        - MDK-ARM/RTE/_CtrlBoard-H7_IMU
+      libList: []
+    excludeList: []
+    settings:
+      debugger: cortex-debug
+    toolchain: AC6
+    toolchainConfigMap:
+      AC6:
+        archExtensions: ""
+        cpuType: Cortex-M7
+        floatingPointHardware: double
+        options:
+          version: 3
+          afterBuildTasks: []
+          asm-compiler:
+            $use: asm-auto
+            defines: []
+            misc-controls: ""
+          beforeBuildTasks: []
+          c/cpp-compiler:
+            CXX_FLAGS: -Wno-ignored-attributes
+            C_FLAGS: -Wno-ignored-attributes
+            language-c: c99
+            language-cpp: c++03
+            link-time-optimization: false
+            one-elf-section-per-function: true
+            optimization: level-0
+            short-enums#wchar: true
+            warnings: ac5-like-warnings
+          global:
+            output-debug-info: enable
+            use-microLIB: true
+          linker:
+            $outputTaskExcludes:
+              - .bin
+            misc-controls: --diag_suppress=L6329
+            output-format: elf
+            ro-base: ""
+            rw-base: ""
+            xo-base: ""
+        scatterFilePath: ""
+        storageLayout:
+          RAM:
+            - id: 1
+              isChecked: false
+              mem:
+                size: "0x8000"
+                startAddr: "0x30000000"
+              noInit: false
+              tag: RAM
+            - id: 2
+              isChecked: true
+              mem:
+                size: "0x4000"
+                startAddr: "0x38000000"
+              noInit: false
+              tag: RAM
+            - id: 3
+              isChecked: false
+              mem:
+                size: "0x0"
+                startAddr: "0x0"
+              noInit: false
+              tag: RAM
+            - id: 1
+              isChecked: true
+              mem:
+                size: "0x20000"
+                startAddr: "0x20000000"
+              noInit: false
+              tag: IRAM
+            - id: 2
+              isChecked: true
+              mem:
+                size: "0x50000"
+                startAddr: "0x24000000"
+              noInit: false
+              tag: IRAM
+          ROM:
+            - id: 1
+              isChecked: false
+              isStartup: false
+              mem:
+                size: "0x0"
+                startAddr: "0x0"
+              tag: ROM
+            - id: 2
+              isChecked: false
+              isStartup: false
+              mem:
+                size: "0x0"
+                startAddr: "0x0"
+              tag: ROM
+            - id: 3
+              isChecked: false
+              isStartup: false
+              mem:
+                size: "0x0"
+                startAddr: "0x0"
+              tag: ROM
+            - id: 1
+              isChecked: true
+              isStartup: true
+              mem:
+                size: "0x100000"
+                startAddr: "0x8000000"
+              tag: IROM
+            - id: 2
+              isChecked: false
+              isStartup: false
+              mem:
+                size: "0x0"
+                startAddr: "0x0"
+              tag: IROM
+        useCustomScatterFile: false
+    uploadConfigMap:
+      JLink:
+        baseAddr: ""
+        bin: ""
+        cpuInfo:
+          cpuName: STM32H723VG
+          vendor: ST
+        otherCmds: ""
+        proType: 1
+        speed: 4000
+      OpenOCD:
+        baseAddr: "0x08000000"
+        bin: ""
+        interface: cmsis-dap
+        target: stm32h7x
+    uploader: OpenOCD

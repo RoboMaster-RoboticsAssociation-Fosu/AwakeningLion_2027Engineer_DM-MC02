@@ -1,0 +1,8 @@
+CompileFlags:
+  Add:
+    - -isystemD:/keilstm32/ARM/ARMCLANG/include
+    - -isystemD:/keilstm32/ARM/ARMCLANG/include/libcxx
+  CompilationDatabase: ./build/CtrlBoard-H7_IMU
+  Compiler: D:/keilstm32/ARM/ARMCLANG/bin/armclang.exe
+  Remove:
+    - -MMD

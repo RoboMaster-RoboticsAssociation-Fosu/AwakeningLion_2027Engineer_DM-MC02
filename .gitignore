@@ -1,0 +1,26 @@
+# dot files
+/.vscode/launch.json
+/.settings
+/.eide/log
+/.eide.usr.ctx.json
+
+# project out
+/build
+/bin
+/obj
+/out
+/MDK-ARM/CtrlBoard-H7_IMU/
+
+# local toolchain packages and generated metadata
+/.cmsis/
+/.pack/
+/MDK-ARM/DebugConfig/
+/MDK-ARM/RTE/
+/MDK-ARM/*.uvguix.*
+/MDK-ARM/*.lst
+/MDK-ARM/JLinkLog.txt
+/MDK-ARM/JLinkSettings.ini
+
+# eide template
+*.ept
+*.eide-template
