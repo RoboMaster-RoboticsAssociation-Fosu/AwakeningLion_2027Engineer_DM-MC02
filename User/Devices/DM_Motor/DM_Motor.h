@@ -18,7 +18,6 @@
 /* Includes ----------------------------------------------------------------- */
 #include "main.h"
 #include "bsp_can.h"
-#include "pid.h"
 #include <stdbool.h>
 
 /* Defines ------------------------------------------------------------------ */
@@ -86,7 +85,7 @@ typedef struct
 {
   uint32_t TxIdentifier;	/* FDCAN发送标识符 */
   uint32_t RxIdentifier;	/* FDCAN接收标识符 */
-}DM_Motor_ID_Typedef;
+}DM_Motor_ID_t;
 
 /**
  * @brief DM电机数据结构体
@@ -107,7 +106,7 @@ typedef struct
 	float Kd;			    /* KD系数 */
 	float Tmos;			    /* MOS管温度 */
 	float Tcoil;			/* 线圈温度 */
-}DM_Motor_Data_Typedef;
+}DM_Motor_Data_t;
 
 /**
  * @brief DM电机信息结构体
@@ -117,21 +116,11 @@ typedef struct
     DM_Motor_mode_e Mode;		    /* 电机模式 */
     DM_Motor_Init_e Motor_state;	/* 电机状态 */
     DM_Motor_Type_e Motor_Type;	    /* 电机类型 */
-    DM_Motor_ID_Typedef ID_Set;	    /* ID设置 */
-    DM_Motor_Data_Typedef Data;	    /* 数据 */
+    DM_Motor_ID_t ID_Set;		    /* ID设置 */
+    DM_Motor_Data_t Data;		    /* 数据 */
 	bool feedback_valid;				/* 已收到至少一帧合法反馈 */
 	uint32_t last_feedback_time_ms;	/* 最近合法反馈时间 */
-}DM_Motor_Info_Typedef;
-
-/**
- * @brief DM电机控制结构体
- */
-typedef struct{
-    Pid_Set_Typedef Angle_set;
-    Pid_Set_Typedef Speed_set;
-    PidTypedef Angle_pid;
-    PidTypedef Speed_pid;
-} DM_Motor_Ctrl_Typedef;
+}DM_Motor_Info_t;
 
 /* Externs ------------------------------------------------------------------ */
 
@@ -139,8 +128,8 @@ typedef struct{
 uint8_t DM_Enable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8_t delay_time);
 uint8_t DM_Disable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8_t delay_time);
 uint8_t DM_Save_Motor_Zero(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8_t delay_time);
-void DM_Motor_Info_Update(DM_Motor_Info_Typedef *motor, uint8_t *rx_data,uint32_t data_len);
-uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_Typedef *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time);
+void DM_Motor_Info_Update(DM_Motor_Info_t *motor, uint8_t *rx_data,uint32_t data_len);
+uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time);
 float Hex_To_Float(uint32_t *Byte,int num);
 uint32_t FloatTohex(float HEX);
 float uint_to_float(int x_int, float x_min, float x_max, int bits);

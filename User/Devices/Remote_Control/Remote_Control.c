@@ -28,11 +28,11 @@ enum
 };
 
 /* Global variable --------------------------------------------------------- */
-Remote_Info_Typedef remote_ctrl={
+Remote_Info_t remote_ctrl={
 	.online_cnt = 0xFAU,
 	.rc_lost = true,
 };
-KeyBoard_Info_Typedef KeyBoard_Info;
+KeyBoard_Info_t KeyBoard_Info;
 
 /* Private variables ------------------------------------------------------- */
 /**
@@ -47,7 +47,7 @@ static volatile uint64_t
     g_remote_iw_edge_sequence[RC_IW_EDGE_BIT_COUNT] = {0U};
 
 /* Static Fun -------------------------------------------------------------- */
-static void Key_Status_Update(KeyBoard_Info_Typedef *KeyInfo,bool KeyBoard_Status);
+static void Key_Status_Update(KeyBoard_Info_t *KeyInfo,bool KeyBoard_Status);
 
 /* Functions --------------------------------------------------------------- */
 /**
@@ -57,7 +57,7 @@ static void Key_Status_Update(KeyBoard_Info_Typedef *KeyInfo,bool KeyBoard_Statu
  * @return 无
  * @note   无
  */
-void SBUS_TO_RC(volatile const uint8_t *sbus_buf, Remote_Info_Typedef  *remote_ctrl)
+void SBUS_TO_RC(volatile const uint8_t *sbus_buf, Remote_Info_t  *remote_ctrl)
 {
     if (sbus_buf == NULL || remote_ctrl == NULL) return;
 
@@ -99,11 +99,11 @@ void SBUS_TO_RC(volatile const uint8_t *sbus_buf, Remote_Info_Typedef  *remote_c
  * @return 无
  * @note   无
  */
-void Remote_Offline_Detect( Remote_Info_Typedef  *remote_ctrl)
+void Remote_Offline_Detect( Remote_Info_t  *remote_ctrl)
 {
     if(remote_ctrl->online_cnt <= 0x32U)
     {
-        memset(remote_ctrl,0,sizeof(Remote_Info_Typedef));
+        memset(remote_ctrl,0,sizeof(Remote_Info_t));
         remote_ctrl->rc_lost = true;
     }
     else if(remote_ctrl->online_cnt > 0)
@@ -118,7 +118,7 @@ void Remote_Offline_Detect( Remote_Info_Typedef  *remote_ctrl)
  * @return 无
  * @note   无
  */
-void Remote_Active_Detect( Remote_Info_Typedef  *remote_ctrl)
+void Remote_Active_Detect( Remote_Info_t  *remote_ctrl)
 {
     for(uint8_t i = 0; i < RC_CHANNEL_COUNT; i++)
     {

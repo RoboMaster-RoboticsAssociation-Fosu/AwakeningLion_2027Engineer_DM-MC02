@@ -17,7 +17,6 @@
 
 /* Includes ----------------------------------------------------------------- */
 #include "stm32h7xx.h"
-#include "pid.h"
 
 /* Defines ------------------------------------------------------------------ */
 #define Chassis_Go8010_Motor_R_ID		0			/* 底盘Go8010右电机ID */
@@ -92,7 +91,7 @@ typedef struct{
 	  uint16_t raw;					/* 原始数据raw */
 	}Status;
 	uint16_t CRC16;					/* CRC16校验 */
-} Unitree_RxInfo_Typedef;
+} Unitree_RxInfo_t;
 #pragma pack(pop)
 
 /**
@@ -110,7 +109,7 @@ typedef struct{
 	MotorError_Type_e  Error_Type;		/* 电机错误类型 */
 	uint8_t cnt;
 	float 	pos_sum;
-} Unitree_Motor_Data_Typedef;
+} Unitree_Motor_Data_t;
 
 /**
  * @brief 电机ID结构体
@@ -118,7 +117,7 @@ typedef struct{
 typedef struct{
 	uint8_t Tx_ID;
 	uint8_t Rx_ID;
-} Unitree_Motor_ID_Typedef;
+} Unitree_Motor_ID_t;
 
 /**
  * @brief 电机控制参数结构体
@@ -133,7 +132,7 @@ typedef struct{
 	int16_t K_pos;					/* 给定刚度Kp */
 	int16_t K_spd;					/* 速度刚度(阻尼)Kd */
 	uint16_t CRC16;					/* CRC校验 */
-} Unitree_Motor_Cmd_Typedef;
+} Unitree_Motor_Cmd_t;
 
 /**
  * @brief 电机信息结构体
@@ -141,33 +140,23 @@ typedef struct{
 typedef struct{
 	bool Initlized;							/* 初始化标志 */
 	Unitree_Motor_Type_e  	   Motor_Type;	/* 电机类型 */
-	Unitree_Motor_ID_Typedef   ID_Set;		/* 电机ID设置 */
-	Unitree_Motor_Data_Typedef Data;		/* 电机接收数据 */
-	Unitree_Motor_Cmd_Typedef  Cmd;			/* 电机控制参数 */
-} Unitree_Motor_Info_Typedef;
-
-/**
- * @brief 电机控制信息结构体
- */
-typedef struct{
-	Pid_Set_Typedef Angle_set;
-	Pid_Set_Typedef Speed_set;
-	PidTypedef Angle_pid;
-	PidTypedef Speed_pid;
-} Unitree_Motor_Ctrl_Typedef;
+	Unitree_Motor_ID_t   ID_Set;		/* 电机ID设置 */
+	Unitree_Motor_Data_t Data;		/* 电机接收数据 */
+	Unitree_Motor_Cmd_t  Cmd;			/* 电机控制参数 */
+} Unitree_Motor_Info_t;
 
 /* Externs ------------------------------------------------------------------ */
-extern Unitree_RxInfo_Typedef Unitree_Rx_Info;
+extern Unitree_RxInfo_t Unitree_Rx_Info;
 extern uint8_t Unitree_MultiRx_Buf[2][UNITREE_RX_BUF_LEN];
 
 /* Functions ---------------------------------------------------------------- */
-void Unitree_Motor_Init(Unitree_Motor_Info_Typedef *Motor,uint8_t Motor_num);
-void Uintree_RxInfo_Unpack(volatile const uint8_t *Motor_buf,Unitree_RxInfo_Typedef *Rx_Data);
-void Unitree_Motor_Cmd(Unitree_Motor_Info_Typedef *Motor, uint8_t mode, float T_ff, float W_des, float Pos_des, float K_p, float K_w);
-void Unitree_Motors_Cmd(Unitree_Motor_Info_Typedef *Motor, uint8_t mode, uint8_t Motor_num, float T_ff, float W_des, float Pos_des, float K_p, float K_w);
-void Unitree_Motor_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_Typedef *Motor, uint16_t delay_time);
-void Unitree_Motors_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_Typedef *Motor, uint8_t Motor_num, uint16_t delay_time);
-void Unitree_Motors_Discmd(Unitree_Motor_Info_Typedef *Motor, uint8_t Motor_num);
+void Unitree_Motor_Init(Unitree_Motor_Info_t *Motor,uint8_t Motor_num);
+void Uintree_RxInfo_Unpack(volatile const uint8_t *Motor_buf,Unitree_RxInfo_t *Rx_Data);
+void Unitree_Motor_Cmd(Unitree_Motor_Info_t *Motor, uint8_t mode, float T_ff, float W_des, float Pos_des, float K_p, float K_w);
+void Unitree_Motors_Cmd(Unitree_Motor_Info_t *Motor, uint8_t mode, uint8_t Motor_num, float T_ff, float W_des, float Pos_des, float K_p, float K_w);
+void Unitree_Motor_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_t *Motor, uint16_t delay_time);
+void Unitree_Motors_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_t *Motor, uint8_t Motor_num, uint16_t delay_time);
+void Unitree_Motors_Discmd(Unitree_Motor_Info_t *Motor, uint8_t Motor_num);
 
 /* -------------------------------------------------------------------------- */
 #endif /* __UNITREE_MOTOR_H */

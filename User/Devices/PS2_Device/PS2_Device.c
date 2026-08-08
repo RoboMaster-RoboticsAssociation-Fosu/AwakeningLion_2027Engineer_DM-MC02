@@ -2,7 +2,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
-PS2_Info_Typedef PS2_Info = {
+PS2_Info_t PS2_Info = {
     .Set = {
         .DI_PORT = GPIOE,
         .DI_PIN = GPIO_PIN_13,
@@ -64,7 +64,7 @@ static uint8_t PS2_ReadWriteData(uint8_t data)
   * @参  数  *JoystickStruct 手柄键值结构体
   * @返回值  无
   */
-void PS2_ScanKey(PS2_Info_Typedef *PS2)
+void PS2_ScanKey(PS2_Info_t *PS2)
 {
 	uint8_t i;
 

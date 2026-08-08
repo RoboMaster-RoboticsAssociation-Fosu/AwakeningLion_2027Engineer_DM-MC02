@@ -31,7 +31,7 @@ typedef enum
     PID_STATUS_INVALID_PARAMETER,   /**< 参数无效或超出允许范围。 */
     PID_STATUS_INVALID_PERIOD,      /**< 计算周期不是有限正数。 */
     PID_STATUS_NUMERIC_ERROR        /**< 计算结果出现 NaN 或无穷大。 */
-} PidStatus;
+} PidStatus_e;
 
 /**
  * @brief PID 离散形式。
@@ -40,7 +40,7 @@ typedef enum
 {
     PID_POSITIONAL_MODE = 0,        /**< 位置式 PID，输出为各分量之和。 */
     PID_INCREMENTAL_MODE = 1        /**< 增量式 PID，输出在上次结果上累加。 */
-} PidMode;
+} PidMode_e;
 
 /**
  * @brief PID 优化功能掩码。
@@ -60,7 +60,7 @@ typedef enum
     PID_IMPROVEMENT_EXTERNAL_P = (1U << 6),
     PID_IMPROVEMENT_EXTERNAL_I = (1U << 7),
     PID_IMPROVEMENT_EXTERNAL_D = (1U << 8)
-} PidImprovement;
+} PidImprovement_e;
 
 /** @brief 当前实现支持的全部优化功能。 */
 #define PID_IMPROVEMENT_ALL_MASK ((uint16_t)0x01FFU)
@@ -77,7 +77,7 @@ typedef struct
     float derivative_filter_time_constant_s;  /**< 微分一阶低通时间常数，单位秒且必须为正。 */
     float variable_integral_threshold_a;      /**< 变速积分线性衰减区宽度，必须为正。 */
     float variable_integral_threshold_b;      /**< 变速积分全增益区边界，必须非负。 */
-} PidImprovementParams;
+} PidImprovementParams_t;
 
 /**
  * @brief PID 控制器实例。
@@ -91,14 +91,14 @@ typedef struct
     float kp;
     float ki;
     float kd;
-    PidMode mode;
+    PidMode_e mode;
     uint16_t improvement_flags;
-    PidImprovementParams improvement;
+    PidImprovementParams_t improvement;
 
     /* 生命周期与诊断状态。 */
     bool initialized;
     uint8_t sample_count;                     /**< 有效历史样本数，最大为 2。 */
-    PidStatus last_status;
+    PidStatus_e last_status;
 
     /* 当前输入、输出与误差。 */
     float setpoint;
@@ -120,7 +120,7 @@ typedef struct
     float i_output;
     float d_output;
     float integral_increment;
-} PidController;
+} PidController_t;
 
 /**
  * @brief 初始化 PID 控制器并清空全部运行状态。
@@ -131,22 +131,22 @@ typedef struct
  * @param kd 微分系数，必须为有限数。
  * @return PID_STATUS_OK 表示初始化成功，其他值表示参数错误。
  */
-PidStatus pid_init(PidController *pid, PidMode mode, float kp, float ki, float kd);
+PidStatus_e pid_init(PidController_t *pid, PidMode_e mode, float kp, float ki, float kd);
 
 /**
  * @brief 更新 PID 基本系数，不清空运行状态。
  */
-PidStatus pid_set_params(PidController *pid, float kp, float ki, float kd);
+PidStatus_e pid_set_params(PidController_t *pid, float kp, float ki, float kd);
 
 /**
  * @brief 设置并启用非对称输出限幅。
  */
-PidStatus pid_set_output_limit(PidController *pid, float min_limit, float max_limit);
+PidStatus_e pid_set_output_limit(PidController_t *pid, float min_limit, float max_limit);
 
 /**
  * @brief 设置并启用积分分量限幅。
  */
-PidStatus pid_set_integral_limit(PidController *pid, float limit);
+PidStatus_e pid_set_integral_limit(PidController_t *pid, float limit);
 
 /**
  * @brief 设置并启用误差死区。
@@ -154,19 +154,19 @@ PidStatus pid_set_integral_limit(PidController *pid, float limit);
  * 位置式 PID 进入死区后保留已有积分分量，避免输出偏置突然丢失；
  * 增量式 PID 在没有外部分量时保持上次输出。
  */
-PidStatus pid_set_dead_band(PidController *pid, float dead_band);
+PidStatus_e pid_set_dead_band(PidController_t *pid, float dead_band);
 
 /**
  * @brief 设置并启用微分一阶低通滤波。
  * @param time_constant_s 滤波时间常数，单位秒且必须大于 0。
  */
-PidStatus pid_set_derivative_filter_time_constant(PidController *pid,
+PidStatus_e pid_set_derivative_filter_time_constant(PidController_t *pid,
                                                   float time_constant_s);
 
 /**
  * @brief 启用或禁用微分先行，即对测量值而不是误差做微分。
  */
-PidStatus pid_set_derivative_first_enable(PidController *pid, bool enable);
+PidStatus_e pid_set_derivative_first_enable(PidController_t *pid, bool enable);
 
 /**
  * @brief 设置并启用变速积分阈值。
@@ -174,7 +174,7 @@ PidStatus pid_set_derivative_first_enable(PidController *pid, bool enable);
  * |error| <= B 时使用完整积分；B < |error| < A+B 时线性衰减；
  * |error| >= A+B 时停止积分。
  */
-PidStatus pid_set_variable_integral_thresholds(PidController *pid,
+PidStatus_e pid_set_variable_integral_thresholds(PidController_t *pid,
                                                float threshold_a,
                                                float threshold_b);
 
@@ -184,7 +184,7 @@ PidStatus pid_set_variable_integral_thresholds(PidController *pid,
  * 对需要参数的功能，应优先调用对应 setter 完成参数设置并启用；直接启用时
  * 如果现有参数无效，本函数会拒绝修改。
  */
-PidStatus pid_set_improvement_enabled(PidController *pid,
+PidStatus_e pid_set_improvement_enabled(PidController_t *pid,
                                       uint16_t improvement_mask,
                                       bool enable);
 
@@ -194,7 +194,7 @@ PidStatus pid_set_improvement_enabled(PidController *pid,
  * 只有启用相应 PID_IMPROVEMENT_EXTERNAL_* 标志的分量会被写入；未接管的
  * 内部分量保持不变。三个外部接管标志均未启用时返回参数错误。
  */
-PidStatus pid_set_external_outputs(PidController *pid,
+PidStatus_e pid_set_external_outputs(PidController_t *pid,
                                    float p_output,
                                    float i_output,
                                    float d_output);
@@ -202,7 +202,7 @@ PidStatus pid_set_external_outputs(PidController *pid,
 /**
  * @brief 清空全部运行状态，同时保留参数、优化配置和初始化状态。
  */
-PidStatus pid_reset(PidController *pid);
+PidStatus_e pid_reset(PidController_t *pid);
 
 /**
  * @brief 执行一次 PID 计算。
@@ -213,7 +213,7 @@ PidStatus pid_reset(PidController *pid);
  * @param output 输出结果指针；失败时写入 0（指针有效时）。
  * @return PID_STATUS_OK 表示计算成功。
  */
-PidStatus pid_compute(PidController *pid,
+PidStatus_e pid_compute(PidController_t *pid,
                       float setpoint,
                       float measurement,
                       float period_s,
@@ -224,83 +224,10 @@ PidStatus pid_compute(PidController *pid,
  *
  * 不关心的分量允许传入 NULL，但三个输出指针不能同时为 NULL。
  */
-PidStatus pid_get_component_outputs(const PidController *pid,
+PidStatus_e pid_get_component_outputs(const PidController_t *pid,
                                     float *p_output,
                                     float *i_output,
                                     float *d_output);
-
-/* -------------------------------------------------------------------------- */
-/* 旧基础 PID 源码兼容层                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * @brief 旧基础 PID 的模式枚举。
- *
- * 仅用于兼容既有调用；新代码应使用 PidMode。
- */
-typedef enum
-{
-    PID_POSITION = 0,
-    PID_DELTA
-} PID_mode_e;
-
-/**
- * @brief 旧基础 PID 的控制器布局。
- *
- * 字段名称和顺序保持不变，使既有监控、参数更新和结构体引用无需修改。
- * PID_Calc() 会在每次调用时把这些字段映射到新的 PidController 内核。
- */
-typedef struct
-{
-    PID_mode_e pid_mode;
-    bool Initlized;
-    float Kp;
-    float Ki;
-    float Kd;
-    float max_out;
-    float max_iout;
-    float set;
-    float fdb;
-    float out;
-    float Pout;
-    float Iout;
-    float Dout;
-    float Dbuf[3];
-    float error[3];
-} PidTypedef;
-
-/**
- * @brief 旧基础 PID 的参数集合，字段布局保持兼容。
- */
-typedef struct
-{
-    float ref;
-    float fdb;
-    float PID_Init[3];
-} Pid_Set_Typedef;
-
-/**
- * @brief 使用旧函数签名初始化兼容 PID。
- *
- * 为保持旧参数含义，兼容层把一次 PID_Calc() 调用归一化为一个离散周期，
- * 即内部 period_s 固定为 1.0。新代码应直接使用 pid_init()/pid_compute()
- * 并传入真实秒制周期。
- */
-void PID_init(PidTypedef *pid,
-              uint8_t mode,
-              const float gains[3],
-              float max_out,
-              float max_iout);
-
-/**
- * @brief 使用旧参数顺序执行 PID 计算，内部委托给新的 PID 内核。
- */
-float PID_Calc(PidTypedef *pid, float fdb, float ref);
-
-/**
- * @brief 清除旧 PID 的运行状态并撤销初始化标志，保留配置参数。
- */
-void PID_clear(PidTypedef *pid);
 
 #ifdef __cplusplus
 }

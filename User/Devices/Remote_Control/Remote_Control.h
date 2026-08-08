@@ -153,32 +153,32 @@ typedef struct
 	KeyBoard_Status_e last_Status;
 	bool last_KEY_PRESS;
 	bool KEY_PRESS;
-}KeyBoard_Info_Typedef;
+}KeyBoard_Info_t;
 
 /**
  * @brief 遥控器按键结构体
  */
 typedef struct
 {
-	KeyBoard_Info_Typedef press_l;
-	KeyBoard_Info_Typedef press_r;
-	KeyBoard_Info_Typedef W;
-	KeyBoard_Info_Typedef S;
-	KeyBoard_Info_Typedef A;
-	KeyBoard_Info_Typedef D;
-	KeyBoard_Info_Typedef SHIFT;
-	KeyBoard_Info_Typedef CTRL;
-	KeyBoard_Info_Typedef Q;
-	KeyBoard_Info_Typedef E;
-	KeyBoard_Info_Typedef R;
-	KeyBoard_Info_Typedef F;
-	KeyBoard_Info_Typedef G;
-//	KeyBoard_Info_Typedef Z;
-//	KeyBoard_Info_Typedef X;
-	KeyBoard_Info_Typedef C;
-	KeyBoard_Info_Typedef V;
-	KeyBoard_Info_Typedef B;
-}Remote_Pressed_Typedef;
+	KeyBoard_Info_t press_l;
+	KeyBoard_Info_t press_r;
+	KeyBoard_Info_t W;
+	KeyBoard_Info_t S;
+	KeyBoard_Info_t A;
+	KeyBoard_Info_t D;
+	KeyBoard_Info_t SHIFT;
+	KeyBoard_Info_t CTRL;
+	KeyBoard_Info_t Q;
+	KeyBoard_Info_t E;
+	KeyBoard_Info_t R;
+	KeyBoard_Info_t F;
+	KeyBoard_Info_t G;
+//	KeyBoard_Info_t Z;
+//	KeyBoard_Info_t X;
+	KeyBoard_Info_t C;
+	KeyBoard_Info_t V;
+	KeyBoard_Info_t B;
+}Remote_Pressed_t;
 
 /**
  * @brief 遥控器信息结构体
@@ -229,15 +229,15 @@ typedef  struct
 	bool rc_active[RC_CHANNEL_COUNT];	/* 摇杆通道活动标志 */
 	uint8_t online_cnt;		/* 在线计数 */
 	uint32_t Last_Remote_Active_Time[RC_CHANNEL_COUNT];
-} Remote_Info_Typedef;
+} Remote_Info_t;
 
 /* Externs ------------------------------------------------------------------ */
-extern Remote_Info_Typedef remote_ctrl;
+extern Remote_Info_t remote_ctrl;
 
 /* Functions ---------------------------------------------------------------- */
-void SBUS_TO_RC(volatile const uint8_t *sbus_buf, Remote_Info_Typedef *remote_ctrl);
-void Remote_Active_Detect( Remote_Info_Typedef  *remote_ctrl);
-void Remote_Offline_Detect( Remote_Info_Typedef  *remote_ctrl);
+void SBUS_TO_RC(volatile const uint8_t *sbus_buf, Remote_Info_t *remote_ctrl);
+void Remote_Active_Detect( Remote_Info_t  *remote_ctrl);
+void Remote_Offline_Detect( Remote_Info_t  *remote_ctrl);
 
 /**
  * @brief 从当前发布位置初始化任务私有边沿游标。

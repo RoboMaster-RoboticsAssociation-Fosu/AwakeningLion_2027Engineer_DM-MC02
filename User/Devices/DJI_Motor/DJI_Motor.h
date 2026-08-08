@@ -19,7 +19,6 @@
 #include "stdbool.h"
 #include "stm32h723xx.h"
 #include "bsp_can.h"
-#include "pid.h"
 
 /* Defines ------------------------------------------------------------------ */
 /* 3508最大转速(rpm) */
@@ -72,7 +71,7 @@ typedef enum{
 typedef struct{
   uint32_t TxIdentifier;	/*!< FDCAN发送标识符 */
   uint32_t RxIdentifier;	/*!< FDCAN接收标识符 */
-}DJI_Motor_ID_Typedef;
+}DJI_Motor_ID_t;
 
 /**
  * @brief 电机接收数据结构体
@@ -86,36 +85,25 @@ typedef struct {
 	int16_t  Last_Encoder;	/*!< 上一次电机编码器角度 */
 	float    Angle;			/*!< 电机角度(°) */
 	uint8_t  Temperature;	/*!< 电机温度 */
-}DJI_Motor_Data_Typedef;
+}DJI_Motor_Data_t;
 
 /**
  * @brief 电机信息结构体
  */
 typedef struct{
 	DJI_Motor_Type_e Motor_Type;	/*!< 电机类型 */
-	DJI_Motor_ID_Typedef ID_Set;	/*!< CAN传输信息 */
-	DJI_Motor_Data_Typedef Data;	/*!< 电机设备信息 */
+	DJI_Motor_ID_t ID_Set;	/*!< CAN传输信息 */
+	DJI_Motor_Data_t Data;	/*!< 电机设备信息 */
 	float wheel_T;					/*!< 车轮的输出扭矩，单位为N·m */
 	bool feedback_valid;			/*!< 已收到至少一帧合法反馈 */
 	uint32_t last_feedback_time_ms;	/*!< 最近合法反馈时间 */
-}DJI_Motor_Info_Typedef;
-
-/**
- * @brief 电机控制信息结构体
- */
-typedef struct
-{
-	Pid_Set_Typedef Angle_set;
-	Pid_Set_Typedef Speed_set;
-	PidTypedef Angle_pid;
-	PidTypedef Speed_pid;
-} DJI_Motor_Ctrl_Typedef;
+}DJI_Motor_Info_t;
 
 /* Externs ------------------------------------------------------------------ */
 
 /* Functions ---------------------------------------------------------------- */
-uint8_t DJI_Motor_ctrl(DJI_Motor_Info_Typedef *DJI_Motor,hcan_t* hcan, uint16_t delay_time);
-void DJI_Motor_Info_Update(DJI_Motor_Info_Typedef *DJI_Motor,uint8_t *rx_data,uint32_t data_len);
+uint8_t DJI_Motor_ctrl(DJI_Motor_Info_t *DJI_Motor,hcan_t* hcan, uint16_t delay_time);
+void DJI_Motor_Info_Update(DJI_Motor_Info_t *DJI_Motor,uint8_t *rx_data,uint32_t data_len);
 
 /* -------------------------------------------------------------------------- */
 #endif /* _DJI_MOTOR_H */

@@ -53,7 +53,7 @@ typedef struct
     float temperature_c;           /*!< 传感器温度，单位 degC */
     uint32_t update_flags;         /*!< 自上次清除以来的数据更新标志 */
     uint32_t last_update_ms;       /*!< 最近一次有效数据更新的 HAL tick */
-} HWT6033_Data_Typedef;
+} HWT6033_Data_t;
 
 /* Functions ---------------------------------------------------------------- */
 #ifdef __cplusplus
@@ -96,7 +96,7 @@ HWT6033_Status_e HWT6033_FeedData(const uint8_t *data, uint32_t length);
  * @param data 接收测量结果的目标结构体
  * @return HWT6033_Status_e
  */
-HWT6033_Status_e HWT6033_CopyData(HWT6033_Data_Typedef *data);
+HWT6033_Status_e HWT6033_CopyData(HWT6033_Data_t *data);
 
 /**
  * @brief 读取并清除累计更新标志

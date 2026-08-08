@@ -22,7 +22,7 @@ typedef enum
 {
     BUTTON_BACKEND_POLLING = 0,
     BUTTON_BACKEND_INTERRUPT
-} ButtonBackend_t;
+} ButtonBackend_e;
 
 /**
  * @brief 按键硬件和时序配置。
@@ -34,7 +34,7 @@ typedef struct
     GPIO_PinState pressed_level;
     uint16_t debounce_ms;
     uint16_t long_press_ms;
-    ButtonBackend_t backend;
+    ButtonBackend_e backend;
 } ButtonConfig_t;
 
 /**

@@ -27,7 +27,7 @@
 
 /* Global variable ---------------------------------------------------------- */
 static UART_HandleTypeDef *hwt6033_uart = NULL;
-static HWT6033_Data_Typedef hwt6033_data;
+static HWT6033_Data_t hwt6033_data;
 static volatile HAL_StatusTypeDef hwt6033_last_tx_status = HAL_OK;
 static volatile uint8_t hwt6033_initialized = 0U;
 
@@ -129,7 +129,7 @@ HWT6033_Status_e HWT6033_FeedData(const uint8_t *data, uint32_t length)
     return HWT6033_STATUS_OK;
 }
 
-HWT6033_Status_e HWT6033_CopyData(HWT6033_Data_Typedef *data)
+HWT6033_Status_e HWT6033_CopyData(HWT6033_Data_t *data)
 {
     uint32_t primask;
 

@@ -11,7 +11,7 @@
 /**
  * @brief 记录状态并将其返回，统一所有错误出口。
  */
-static PidStatus pid_record_status(PidController *pid, PidStatus status)
+static PidStatus_e pid_record_status(PidController_t *pid, PidStatus_e status)
 {
     if (pid != NULL)
     {
@@ -31,7 +31,7 @@ static bool pid_is_finite(float value)
 /**
  * @brief 判断控制器是否启用了指定优化功能。
  */
-static bool pid_has_improvement(const PidController *pid, uint16_t improvement)
+static bool pid_has_improvement(const PidController_t *pid, uint16_t improvement)
 {
     return (pid->improvement_flags & improvement) != 0U;
 }
@@ -39,7 +39,7 @@ static bool pid_has_improvement(const PidController *pid, uint16_t improvement)
 /**
  * @brief 检查控制器实例是否可供运行期接口使用。
  */
-static PidStatus pid_require_initialized(PidController *pid)
+static PidStatus_e pid_require_initialized(PidController_t *pid)
 {
     if (pid == NULL)
     {
@@ -74,10 +74,10 @@ static float pid_clamp(float value, float min_value, float max_value)
  * 控制器结构公开用于在线观测，调用方仍可能误写参数，因此计算前也会执行
  * 本校验，避免无效配置继续传播到执行器。
  */
-static PidStatus pid_validate_improvement_parameters(const PidController *pid,
+static PidStatus_e pid_validate_improvement_parameters(const PidController_t *pid,
                                                      uint16_t improvement_flags)
 {
-    const PidImprovementParams *params;
+    const PidImprovementParams_t *params;
 
     if ((improvement_flags & (uint16_t)(~PID_IMPROVEMENT_ALL_MASK)) != 0U)
     {
@@ -139,7 +139,7 @@ static PidStatus pid_validate_improvement_parameters(const PidController *pid,
 /**
  * @brief 根据误差计算变速积分系数，返回范围为 [0, 1]。
  */
-static float pid_variable_integral_factor(const PidController *pid, float error)
+static float pid_variable_integral_factor(const PidController_t *pid, float error)
 {
     const float absolute_error = fabsf(error);
     const float threshold_a = pid->improvement.variable_integral_threshold_a;
@@ -166,7 +166,7 @@ static float pid_variable_integral_factor(const PidController *pid, float error)
  * alpha = dt / (tau + dt)。相比原实现固定滤波系数，该形式在任务周期轻微
  * 波动时仍保持相同的物理截止特性。
  */
-static float pid_filter_derivative(const PidController *pid, float derivative)
+static float pid_filter_derivative(const PidController_t *pid, float derivative)
 {
     float alpha;
 
@@ -183,7 +183,7 @@ static float pid_filter_derivative(const PidController *pid, float derivative)
 /**
  * @brief 计算位置式 PID。
  */
-static float pid_compute_positional(PidController *pid,
+static float pid_compute_positional(PidController_t *pid,
                                     float control_error,
                                     bool in_dead_band)
 {
@@ -274,7 +274,7 @@ static float pid_compute_positional(PidController *pid,
  * 增量式控制器的 P/I/D 分量均表示“本周期输出增量”。积分限幅因此限制的是
  * 单周期积分增量；累计输出由输出限幅负责约束。
  */
-static float pid_compute_incremental(PidController *pid,
+static float pid_compute_incremental(PidController_t *pid,
                                      float control_error,
                                      bool in_dead_band)
 {
@@ -364,7 +364,7 @@ static float pid_compute_incremental(PidController *pid,
 /**
  * @brief 数值异常时清空受污染的运行状态并输出安全零值。
  */
-static PidStatus pid_handle_numeric_error(PidController *pid, float *output)
+static PidStatus_e pid_handle_numeric_error(PidController_t *pid, float *output)
 {
     (void)pid_reset(pid);
     pid->last_status = PID_STATUS_NUMERIC_ERROR;
@@ -372,7 +372,7 @@ static PidStatus pid_handle_numeric_error(PidController *pid, float *output)
     return PID_STATUS_NUMERIC_ERROR;
 }
 
-PidStatus pid_init(PidController *pid, PidMode mode, float kp, float ki, float kd)
+PidStatus_e pid_init(PidController_t *pid, PidMode_e mode, float kp, float ki, float kd)
 {
     if (pid == NULL)
     {
@@ -397,9 +397,9 @@ PidStatus pid_init(PidController *pid, PidMode mode, float kp, float ki, float k
     return PID_STATUS_OK;
 }
 
-PidStatus pid_set_params(PidController *pid, float kp, float ki, float kd)
+PidStatus_e pid_set_params(PidController_t *pid, float kp, float ki, float kd)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
 
     if (status != PID_STATUS_OK)
     {
@@ -416,9 +416,9 @@ PidStatus pid_set_params(PidController *pid, float kp, float ki, float kd)
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_output_limit(PidController *pid, float min_limit, float max_limit)
+PidStatus_e pid_set_output_limit(PidController_t *pid, float min_limit, float max_limit)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
 
     if (status != PID_STATUS_OK)
     {
@@ -436,9 +436,9 @@ PidStatus pid_set_output_limit(PidController *pid, float min_limit, float max_li
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_integral_limit(PidController *pid, float limit)
+PidStatus_e pid_set_integral_limit(PidController_t *pid, float limit)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
 
     if (status != PID_STATUS_OK)
     {
@@ -454,9 +454,9 @@ PidStatus pid_set_integral_limit(PidController *pid, float limit)
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_dead_band(PidController *pid, float dead_band)
+PidStatus_e pid_set_dead_band(PidController_t *pid, float dead_band)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
 
     if (status != PID_STATUS_OK)
     {
@@ -472,10 +472,10 @@ PidStatus pid_set_dead_band(PidController *pid, float dead_band)
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_derivative_filter_time_constant(PidController *pid,
+PidStatus_e pid_set_derivative_filter_time_constant(PidController_t *pid,
                                                   float time_constant_s)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
 
     if (status != PID_STATUS_OK)
     {
@@ -491,17 +491,17 @@ PidStatus pid_set_derivative_filter_time_constant(PidController *pid,
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_derivative_first_enable(PidController *pid, bool enable)
+PidStatus_e pid_set_derivative_first_enable(PidController_t *pid, bool enable)
 {
     return pid_set_improvement_enabled(
         pid, PID_IMPROVEMENT_DERIVATIVE_ON_MEASUREMENT, enable);
 }
 
-PidStatus pid_set_variable_integral_thresholds(PidController *pid,
+PidStatus_e pid_set_variable_integral_thresholds(PidController_t *pid,
                                                float threshold_a,
                                                float threshold_b)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
 
     if (status != PID_STATUS_OK)
     {
@@ -519,11 +519,11 @@ PidStatus pid_set_variable_integral_thresholds(PidController *pid,
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_improvement_enabled(PidController *pid,
+PidStatus_e pid_set_improvement_enabled(PidController_t *pid,
                                       uint16_t improvement_mask,
                                       bool enable)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
     uint16_t candidate_flags;
 
     if (status != PID_STATUS_OK)
@@ -550,12 +550,12 @@ PidStatus pid_set_improvement_enabled(PidController *pid,
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_set_external_outputs(PidController *pid,
+PidStatus_e pid_set_external_outputs(PidController_t *pid,
                                    float p_output,
                                    float i_output,
                                    float d_output)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
     const bool external_p = (pid != NULL) &&
                             pid_has_improvement(pid, PID_IMPROVEMENT_EXTERNAL_P);
     const bool external_i = (pid != NULL) &&
@@ -590,15 +590,15 @@ PidStatus pid_set_external_outputs(PidController *pid,
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_reset(PidController *pid)
+PidStatus_e pid_reset(PidController_t *pid)
 {
-    PidStatus status = pid_require_initialized(pid);
+    PidStatus_e status = pid_require_initialized(pid);
     float kp;
     float ki;
     float kd;
-    PidMode mode;
+    PidMode_e mode;
     uint16_t improvement_flags;
-    PidImprovementParams improvement;
+    PidImprovementParams_t improvement;
 
     if (status != PID_STATUS_OK)
     {
@@ -624,13 +624,13 @@ PidStatus pid_reset(PidController *pid)
     return PID_STATUS_OK;
 }
 
-PidStatus pid_compute(PidController *pid,
+PidStatus_e pid_compute(PidController_t *pid,
                       float setpoint,
                       float measurement,
                       float period_s,
                       float *output)
 {
-    PidStatus status;
+    PidStatus_e status;
     float control_error;
     bool in_dead_band;
 
@@ -727,7 +727,7 @@ PidStatus pid_compute(PidController *pid,
     return pid_record_status(pid, PID_STATUS_OK);
 }
 
-PidStatus pid_get_component_outputs(const PidController *pid,
+PidStatus_e pid_get_component_outputs(const PidController_t *pid,
                                     float *p_output,
                                     float *i_output,
                                     float *d_output)
@@ -758,182 +758,4 @@ PidStatus pid_get_component_outputs(const PidController *pid,
         *d_output = pid->d_output;
     }
     return PID_STATUS_OK;
-}
-
-/* -------------------------------------------------------------------------- */
-/* 旧基础 PID 源码兼容层                                                     */
-/* -------------------------------------------------------------------------- */
-
-/**
- * @brief 清除兼容结构中的运行状态，不修改模式和控制参数。
- */
-static void pid_compatibility_clear_runtime(PidTypedef *pid)
-{
-    pid->set = 0.0F;
-    pid->fdb = 0.0F;
-    pid->out = 0.0F;
-    pid->Pout = 0.0F;
-    pid->Iout = 0.0F;
-    pid->Dout = 0.0F;
-    pid->Dbuf[0] = 0.0F;
-    pid->Dbuf[1] = 0.0F;
-    pid->Dbuf[2] = 0.0F;
-    pid->error[0] = 0.0F;
-    pid->error[1] = 0.0F;
-    pid->error[2] = 0.0F;
-}
-
-void PID_init(PidTypedef *pid,
-              uint8_t mode,
-              const float gains[3],
-              float max_out,
-              float max_iout)
-{
-    if ((pid == NULL) || (gains == NULL))
-    {
-        return;
-    }
-    if (((mode != (uint8_t)PID_POSITION) &&
-         (mode != (uint8_t)PID_DELTA)) ||
-        !pid_is_finite(gains[0]) ||
-        !pid_is_finite(gains[1]) ||
-        !pid_is_finite(gains[2]) ||
-        !pid_is_finite(max_out) ||
-        !pid_is_finite(max_iout) ||
-        (max_out < 0.0F) ||
-        (max_iout < 0.0F))
-    {
-        return;
-    }
-
-    /* 保留旧模块 DEBUG 模式下重复调用 PID_init() 可在线更新增益的行为。 */
-    if (pid->Initlized)
-    {
-        pid->Kp = gains[0];
-        pid->Ki = gains[1];
-        pid->Kd = gains[2];
-        return;
-    }
-
-    pid->pid_mode = (PID_mode_e)mode;
-    pid->Kp = gains[0];
-    pid->Ki = gains[1];
-    pid->Kd = gains[2];
-    pid->max_out = max_out;
-    pid->max_iout = max_iout;
-    pid_compatibility_clear_runtime(pid);
-    pid->Initlized = true;
-}
-
-float PID_Calc(PidTypedef *pid, float fdb, float ref)
-{
-    PidController controller;
-    PidStatus status;
-    PidMode mode;
-    float output = 0.0F;
-    float previous_error;
-    float previous_error_2;
-    float previous_dbuf;
-    float previous_dbuf_2;
-
-    if (pid == NULL)
-    {
-        return 0.0F;
-    }
-    if (!pid->Initlized)
-    {
-        pid_compatibility_clear_runtime(pid);
-        return 0.0F;
-    }
-    if (((pid->pid_mode != PID_POSITION) &&
-         (pid->pid_mode != PID_DELTA)) ||
-        !pid_is_finite(pid->Kp) ||
-        !pid_is_finite(pid->Ki) ||
-        !pid_is_finite(pid->Kd) ||
-        !pid_is_finite(pid->max_out) ||
-        !pid_is_finite(pid->max_iout) ||
-        (pid->max_out < 0.0F) ||
-        (pid->max_iout < 0.0F))
-    {
-        PID_clear(pid);
-        return 0.0F;
-    }
-
-    previous_error = pid->error[0];
-    previous_error_2 = pid->error[1];
-    previous_dbuf = pid->Dbuf[0];
-    previous_dbuf_2 = pid->Dbuf[1];
-    mode = (pid->pid_mode == PID_POSITION)
-               ? PID_POSITIONAL_MODE
-               : PID_INCREMENTAL_MODE;
-
-    status = pid_init(&controller, mode, pid->Kp, pid->Ki, pid->Kd);
-    if ((status == PID_STATUS_OK) && (pid->pid_mode == PID_POSITION))
-    {
-        status = pid_set_integral_limit(&controller, pid->max_iout);
-    }
-    if ((status == PID_STATUS_OK) && (pid->max_out > 0.0F))
-    {
-        status = pid_set_output_limit(&controller,
-                                      -pid->max_out,
-                                      pid->max_out);
-    }
-
-    if (status != PID_STATUS_OK)
-    {
-        PID_clear(pid);
-        return 0.0F;
-    }
-
-    /*
-     * 兼容接口没有周期参数，因此使用归一化周期 1.0。这样旧 Kp/Ki/Kd
-     * 仍保持“每调用一次”的离散含义，同时计算逻辑全部复用新内核。
-     */
-    controller.sample_count = 2U;
-    controller.previous_error = previous_error;
-    controller.previous_error_2 = previous_error_2;
-    controller.previous_output = pid->out;
-    controller.i_output = pid->Iout;
-
-    status = pid_compute(&controller, ref, fdb, 1.0F, &output);
-    if (status != PID_STATUS_OK)
-    {
-        PID_clear(pid);
-        return 0.0F;
-    }
-
-    /* max_out == 0 在旧模块中表示输出被钳制为零。 */
-    if (pid->max_out == 0.0F)
-    {
-        output = 0.0F;
-    }
-
-    pid->set = ref;
-    pid->fdb = fdb;
-    pid->error[2] = previous_error_2;
-    pid->error[1] = previous_error;
-    pid->error[0] = controller.error;
-    pid->Dbuf[2] = previous_dbuf_2;
-    pid->Dbuf[1] = previous_dbuf;
-    pid->Dbuf[0] = (pid->pid_mode == PID_POSITION)
-                       ? (pid->error[0] - pid->error[1])
-                       : (pid->error[0] -
-                          (2.0F * pid->error[1]) +
-                          pid->error[2]);
-    pid->Pout = controller.p_output;
-    pid->Iout = controller.i_output;
-    pid->Dout = controller.d_output;
-    pid->out = output;
-    return pid->out;
-}
-
-void PID_clear(PidTypedef *pid)
-{
-    if (pid == NULL)
-    {
-        return;
-    }
-
-    pid_compatibility_clear_runtime(pid);
-    pid->Initlized = false;
 }

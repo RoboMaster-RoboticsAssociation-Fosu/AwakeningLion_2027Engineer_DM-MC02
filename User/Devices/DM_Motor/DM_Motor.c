@@ -88,7 +88,7 @@ float uint_to_float(int x_int, float x_min, float x_max, int bits)
  * @return 无
  * @note   从接收到的CAN数据中提取DM电机反馈信息，包括ID、状态、位置、速度、扭矩和温度
  */
-void DM_Motor_Info_Update(DM_Motor_Info_Typedef *motor, uint8_t *rx_data,uint32_t data_len)
+void DM_Motor_Info_Update(DM_Motor_Info_t *motor, uint8_t *rx_data,uint32_t data_len)
 { 
 	if(data_len==FDCAN_DLC_BYTES_8)
 	{
@@ -236,7 +236,7 @@ uint8_t DM_Disable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint
  * @return 0 表示CAN发送成功，非零表示模式无效或发送失败
  * @note   delay_time为0时不阻塞当前任务
  */
-uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_Typedef *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time)
+uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time)
 {
 	uint8_t send_status = 1U;
 

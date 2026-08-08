@@ -24,12 +24,12 @@
 
 /* Global variable --------------------------------------------------------- */
 __attribute__((section (".AXI_SRAM"))) uint8_t Unitree_MultiRx_Buf[2][UNITREE_RX_BUF_LEN];
-Unitree_RxInfo_Typedef Unitree_Rx_Info;
+Unitree_RxInfo_t Unitree_Rx_Info;
 
 /* Static Fun -------------------------------------------------------------- */
-static void Unitree_get_offset(Unitree_Motor_Info_Typedef *Motor);
-static void Unitree_Motor_Info_Update(Unitree_Motor_Info_Typedef *Motor, Unitree_RxInfo_Typedef *Unitree_RxInfo);
-static void Unitree_ID_Select(uint8_t ID, Unitree_RxInfo_Typedef *Unitree_RxInfo);
+static void Unitree_get_offset(Unitree_Motor_Info_t *Motor);
+static void Unitree_Motor_Info_Update(Unitree_Motor_Info_t *Motor, Unitree_RxInfo_t *Unitree_RxInfo);
+static void Unitree_ID_Select(uint8_t ID, Unitree_RxInfo_t *Unitree_RxInfo);
 
 /* Functions --------------------------------------------------------------- */
 /**
@@ -39,7 +39,7 @@ static void Unitree_ID_Select(uint8_t ID, Unitree_RxInfo_Typedef *Unitree_RxInfo
  * @return 无
  * @note   无
  */
-void Unitree_Motor_Init(Unitree_Motor_Info_Typedef *Motor,uint8_t Motor_num)
+void Unitree_Motor_Init(Unitree_Motor_Info_t *Motor,uint8_t Motor_num)
 {
 	for(uint8_t i=0;i<Motor_num;i++)
 	{	
@@ -63,7 +63,7 @@ void Unitree_Motor_Init(Unitree_Motor_Info_Typedef *Motor,uint8_t Motor_num)
  * @return 无
  * @note   无
  */
-void Uintree_RxInfo_Unpack(volatile const uint8_t *Motor_buf,Unitree_RxInfo_Typedef *Unitree_RxInfo)
+void Uintree_RxInfo_Unpack(volatile const uint8_t *Motor_buf,Unitree_RxInfo_t *Unitree_RxInfo)
 {
 	Unitree_RxInfo->HEAD = ((uint16_t)Motor_buf[0] << 8 | (uint16_t)Motor_buf[1]);
 	if(Unitree_RxInfo->HEAD == Unitree_RxHEAD)
@@ -96,7 +96,7 @@ void Uintree_RxInfo_Unpack(volatile const uint8_t *Motor_buf,Unitree_RxInfo_Type
  * @return 无
  * @note   无
  */
-void Unitree_Motor_Cmd(Unitree_Motor_Info_Typedef *Motor, uint8_t mode, float T_ff, float W_des, float Pos_des, float K_p, float K_w)
+void Unitree_Motor_Cmd(Unitree_Motor_Info_t *Motor, uint8_t mode, float T_ff, float W_des, float Pos_des, float K_p, float K_w)
 {
 	Motor->Cmd.Tx_ID = Motor->ID_Set.Tx_ID & 0xF;
 	Motor->Cmd.Mode  = mode & 0x07;
@@ -120,7 +120,7 @@ void Unitree_Motor_Cmd(Unitree_Motor_Info_Typedef *Motor, uint8_t mode, float T_
  * @return 无
  * @note   无
  */
-void Unitree_Motors_Cmd(Unitree_Motor_Info_Typedef *Motor, uint8_t mode, uint8_t Motor_num, float T_ff, float W_des, float Pos_des, float K_p, float K_w)
+void Unitree_Motors_Cmd(Unitree_Motor_Info_t *Motor, uint8_t mode, uint8_t Motor_num, float T_ff, float W_des, float Pos_des, float K_p, float K_w)
 {
 	for(uint8_t i=0;i<Motor_num;i++)
 	{
@@ -135,7 +135,7 @@ void Unitree_Motors_Cmd(Unitree_Motor_Info_Typedef *Motor, uint8_t mode, uint8_t
  * @return 无
  * @note   无
  */
-void Unitree_Motors_Discmd(Unitree_Motor_Info_Typedef *Motor, uint8_t Motor_num)
+void Unitree_Motors_Discmd(Unitree_Motor_Info_t *Motor, uint8_t Motor_num)
 {
 	for(uint8_t i = 0;i<Motor_num;i++)
 	{
@@ -152,7 +152,7 @@ void Unitree_Motors_Discmd(Unitree_Motor_Info_Typedef *Motor, uint8_t Motor_num)
  * @return 无
  * @note   无
  */
-void Unitree_Motor_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_Typedef *Motor, uint16_t delay_time)
+void Unitree_Motor_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_t *Motor, uint16_t delay_time)
 {
 	static uint8_t Data[UNITREE_TX_BUF_LEN];
 
@@ -192,7 +192,7 @@ void Unitree_Motor_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_Typedef *M
  * @return 无
  * @note   无
  */
-void Unitree_Motors_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_Typedef *Motor, uint8_t Motor_num, uint16_t delay_time)
+void Unitree_Motors_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_t *Motor, uint8_t Motor_num, uint16_t delay_time)
 {
 	for(uint8_t i = 0;i<Motor_num;i++)
 	{
@@ -207,7 +207,7 @@ void Unitree_Motors_Ctrl(UART_HandleTypeDef *huart, Unitree_Motor_Info_Typedef *
  * @return 无
  * @note   上电/单片机重启电机零点校准
  */
-static void Unitree_get_offset(Unitree_Motor_Info_Typedef *Motor)
+static void Unitree_get_offset(Unitree_Motor_Info_t *Motor)
 {
 	if (Motor->Data.cnt < CALIBRATION_COUNT)
 	{
@@ -232,7 +232,7 @@ static void Unitree_get_offset(Unitree_Motor_Info_Typedef *Motor)
  * @return 无
  * @note   无
  */
-static void Unitree_Motor_Info_Update(Unitree_Motor_Info_Typedef *Motor, Unitree_RxInfo_Typedef *Unitree_RxInfo)
+static void Unitree_Motor_Info_Update(Unitree_Motor_Info_t *Motor, Unitree_RxInfo_t *Unitree_RxInfo)
 {
 	Motor->Data.Rx_ID = Unitree_RxInfo->Mode_Info.bits.ID;
 	Motor->Data.Error_Type  = (MotorError_Type_e)Unitree_RxInfo->Status.bits.MERROR;
@@ -251,7 +251,7 @@ static void Unitree_Motor_Info_Update(Unitree_Motor_Info_Typedef *Motor, Unitree
  * @return 无
  * @note   无
  */
-static void Unitree_ID_Select(uint8_t ID, Unitree_RxInfo_Typedef *Unitree_RxInfo)
+static void Unitree_ID_Select(uint8_t ID, Unitree_RxInfo_t *Unitree_RxInfo)
 {
 	switch(ID) // 根据ID选择电机
 	{

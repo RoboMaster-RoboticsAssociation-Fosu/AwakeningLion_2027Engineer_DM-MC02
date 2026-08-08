@@ -18,7 +18,7 @@
 /* Defines ----------------------------------------------------------------- */
 
 /* Global variable --------------------------------------------------------- */
-PC_Info_Typedef PC_RxInfo = {
+PC_Info_t PC_RxInfo = {
     .online_cnt = 0xFAU,
     .pc_lost = true,
 };
@@ -35,7 +35,7 @@ __attribute__((section (".AXI_SRAM"))) uint8_t PC_MultiRx_Buf[PC_RX_DATA_LEN];
  * @return	无
  * @note	无
  */
-void PC_Info_Update(uint8_t *buff,PC_Info_Typedef *PC_Info)
+void PC_Info_Update(uint8_t *buff,PC_Info_t *PC_Info)
 {
     // PC_Info->HEAD = buff[0];
     // if(PC_Info->HEAD == PC_RxHEAD)
@@ -74,11 +74,11 @@ void PC_Info_Upload()
  * @return	无
  * @note	在线计数值低于阈值时判定为离线
  */
-void PC_Offline_Detect(PC_Info_Typedef *PC_Info)
+void PC_Offline_Detect(PC_Info_t *PC_Info)
 {
     if(PC_Info->online_cnt <= 0x32U)
     {
-        memset(PC_Info,0,sizeof(PC_Info_Typedef));
+        memset(PC_Info,0,sizeof(PC_Info_t));
         PC_Info->pc_lost = true;
     }
     else if(PC_Info->online_cnt > 0)

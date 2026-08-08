@@ -6,14 +6,14 @@
 #include "gpio.h"
 #include "bsp_dwt.h"
 
-#define CLK_PORT(INFO)      (((PS2_Info_Typedef *)(INFO))->Set.CLK_PORT)
-#define CLK_PIN(INFO)       (((PS2_Info_Typedef *)(INFO))->Set.CLK_PIN)
-#define CMD_PORT(INFO)      (((PS2_Info_Typedef *)(INFO))->Set.CMD_PORT)
-#define CMD_PIN(INFO)       (((PS2_Info_Typedef *)(INFO))->Set.CMD_PIN)
-#define DI_PORT(INFO)       (((PS2_Info_Typedef *)(INFO))->Set.DI_PORT)
-#define DI_PIN(INFO)        (((PS2_Info_Typedef *)(INFO))->Set.DI_PIN)
-#define CS_PORT(INFO)       (((PS2_Info_Typedef *)(INFO))->Set.CS_PORT)
-#define CS_PIN(INFO)        (((PS2_Info_Typedef *)(INFO))->Set.CS_PIN)
+#define CLK_PORT(INFO)      (((PS2_Info_t *)(INFO))->Set.CLK_PORT)
+#define CLK_PIN(INFO)       (((PS2_Info_t *)(INFO))->Set.CLK_PIN)
+#define CMD_PORT(INFO)      (((PS2_Info_t *)(INFO))->Set.CMD_PORT)
+#define CMD_PIN(INFO)       (((PS2_Info_t *)(INFO))->Set.CMD_PIN)
+#define DI_PORT(INFO)       (((PS2_Info_t *)(INFO))->Set.DI_PORT)
+#define DI_PIN(INFO)        (((PS2_Info_t *)(INFO))->Set.DI_PIN)
+#define CS_PORT(INFO)       (((PS2_Info_t *)(INFO))->Set.CS_PORT)
+#define CS_PIN(INFO)        (((PS2_Info_t *)(INFO))->Set.CS_PIN)
 
 #define InPort(PORT, PIN)       HAL_GPIO_ReadPin(PORT, PIN)
 #define OutPort_H(PORT, PIN)    HAL_GPIO_WritePin(PORT, PIN, GPIO_PIN_SET)
@@ -28,10 +28,10 @@
 #define PS2_RC_MAX   127
 #define PS2_RC_MIN   -128
 
-#define PS2_LRC_LR(x)       (((PS2_Info_Typedef *)(x))->Data.LJoy_LR)
-#define PS2_LRC_UD(x)       (((PS2_Info_Typedef *)(x))->Data.LJoy_UD)
-#define PS2_RRC_LR(x)       (((PS2_Info_Typedef *)(x))->Data.RJoy_LR)
-#define PS2_RRC_UD(x)       (((PS2_Info_Typedef *)(x))->Data.RJoy_UD)
+#define PS2_LRC_LR(x)       (((PS2_Info_t *)(x))->Data.LJoy_LR)
+#define PS2_LRC_UD(x)       (((PS2_Info_t *)(x))->Data.LJoy_UD)
+#define PS2_RRC_LR(x)       (((PS2_Info_t *)(x))->Data.RJoy_LR)
+#define PS2_RRC_UD(x)       (((PS2_Info_t *)(x))->Data.RJoy_UD)
 
 typedef struct 
 {
@@ -72,7 +72,7 @@ typedef struct
     int16_t LJoy_LR;        /* 左边摇杆  0x00 = 左    0xff = 右   */
 
     int16_t LJoy_UD;        /* 左边摇杆  0x00 = 上    0xff = 下   */
-} PS2_Data_Typedef;
+} PS2_Data_t;
 
 typedef struct {
     GPIO_TypeDef *DI_PORT;      // 接收数据引脚
@@ -83,20 +83,20 @@ typedef struct {
 	uint16_t CS_PIN;
 	GPIO_TypeDef *CLK_PORT;     // 时钟引脚
 	uint16_t CLK_PIN;
-} PS2_Set_Typedef;
+} PS2_Set_t;
 
 typedef struct {
-    PS2_Set_Typedef Set;
-    PS2_Data_Typedef Data;
+    PS2_Set_t Set;
+    PS2_Data_t Data;
     const uint8_t PS2_cmnd[9];   //请求获取数据命令                         
     uint8_t PS2_buff[9];         //接收的数据
-} PS2_Info_Typedef;
+} PS2_Info_t;
 
-extern PS2_Info_Typedef PS2_Info;
+extern PS2_Info_t PS2_Info;
 
 void PS2_Init(void);
 
-void PS2_ScanKey(PS2_Info_Typedef *PS2);
+void PS2_ScanKey(PS2_Info_t *PS2);
 
 
 

@@ -23,7 +23,7 @@
 /* Global variable --------------------------------------------------------- */
 
 /* Static Fun -------------------------------------------------------------- */
-static float DJI_Motor_Encoder_To_Anglesum(DJI_Motor_Data_Typedef *Data,float Torque_Ratio,uint16_t MAXEncoder);
+static float DJI_Motor_Encoder_To_Anglesum(DJI_Motor_Data_t *Data,float Torque_Ratio,uint16_t MAXEncoder);
 
 /* Functions --------------------------------------------------------------- */
 /**
@@ -34,7 +34,7 @@ static float DJI_Motor_Encoder_To_Anglesum(DJI_Motor_Data_Typedef *Data,float To
  * @return 0 表示CAN发送成功，非零表示发送失败
  * @note   delay_time为0时不阻塞当前任务
  */
-uint8_t DJI_Motor_ctrl(DJI_Motor_Info_Typedef *DJI_Motor,hcan_t* hcan, uint16_t delay_time)
+uint8_t DJI_Motor_ctrl(DJI_Motor_Info_t *DJI_Motor,hcan_t* hcan, uint16_t delay_time)
 {
 	uint8_t data[8];
 	uint8_t send_status;
@@ -65,7 +65,7 @@ uint8_t DJI_Motor_ctrl(DJI_Motor_Info_Typedef *DJI_Motor,hcan_t* hcan, uint16_t 
  * @return 无
  * @note   无
  */
-void DJI_Motor_Info_Update(DJI_Motor_Info_Typedef *DJI_Motor,uint8_t *rx_data,uint32_t data_len)
+void DJI_Motor_Info_Update(DJI_Motor_Info_t *DJI_Motor,uint8_t *rx_data,uint32_t data_len)
 {
 	/* 检查标识符 */
 	if(data_len!=FDCAN_DLC_BYTES_8) return;
@@ -137,7 +137,7 @@ float F_Loop_Constrain(float Input, float Min_Value, float Max_Value)
  * @return 累计角度(°) 
  * @note   无
  */
-static float DJI_Motor_Encoder_To_Anglesum(DJI_Motor_Data_Typedef *Data,float Torque_Ratio,uint16_t MAXEncoder)
+static float DJI_Motor_Encoder_To_Anglesum(DJI_Motor_Data_t *Data,float Torque_Ratio,uint16_t MAXEncoder)
 {
   float res1 = 0,res2 =0;
   
