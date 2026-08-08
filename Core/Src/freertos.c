@@ -49,11 +49,11 @@
 /* USER CODE BEGIN Variables */
 
 /* USER CODE END Variables */
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 128 * 4,
+/* Definitions for serviceTask */
+osThreadId_t serviceTaskHandle;
+const osThreadAttr_t serviceTask_attributes = {
+  .name = "serviceTask",
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
 /* Definitions for INS_TASK */
@@ -63,19 +63,19 @@ const osThreadAttr_t INS_TASK_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityRealtime,
 };
-/* Definitions for CHASSIS_TASK */
-osThreadId_t CHASSIS_TASKHandle;
-const osThreadAttr_t CHASSIS_TASK_attributes = {
-  .name = "CHASSIS_TASK",
+/* Definitions for robotCtrlTask */
+osThreadId_t robotCtrlTaskHandle;
+const osThreadAttr_t robotCtrlTask_attributes = {
+  .name = "robotCtrlTask",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityAboveNormal,
-};
-/* Definitions for rcTask */
-osThreadId_t rcTaskHandle;
-const osThreadAttr_t rcTask_attributes = {
-  .name = "rcTask",
-  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityHigh,
+};
+/* Definitions for inputTask */
+osThreadId_t inputTaskHandle;
+const osThreadAttr_t inputTask_attributes = {
+  .name = "inputTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityAboveNormal,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -83,10 +83,10 @@ const osThreadAttr_t rcTask_attributes = {
 
 /* USER CODE END FunctionPrototypes */
 
-void StartDefaultTask(void *argument);
+void StartServiceTask(void *argument);
 void INS_Task(void *argument);
-void CHASSIS_Task(void *argument);
-void StartRcTask(void *argument);
+void StartRobotCtrlTask(void *argument);
+void StartInputTask(void *argument);
 
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -118,17 +118,17 @@ void MX_FREERTOS_Init(void) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+  /* creation of serviceTask */
+  serviceTaskHandle = osThreadNew(StartServiceTask, NULL, &serviceTask_attributes);
 
   /* creation of INS_TASK */
   INS_TASKHandle = osThreadNew(INS_Task, NULL, &INS_TASK_attributes);
 
-  /* creation of CHASSIS_TASK */
-  CHASSIS_TASKHandle = osThreadNew(CHASSIS_Task, NULL, &CHASSIS_TASK_attributes);
+  /* creation of robotCtrlTask */
+  robotCtrlTaskHandle = osThreadNew(StartRobotCtrlTask, NULL, &robotCtrlTask_attributes);
 
-  /* creation of rcTask */
-  rcTaskHandle = osThreadNew(StartRcTask, NULL, &rcTask_attributes);
+  /* creation of inputTask */
+  inputTaskHandle = osThreadNew(StartInputTask, NULL, &inputTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -140,24 +140,24 @@ void MX_FREERTOS_Init(void) {
 
 }
 
-/* USER CODE BEGIN Header_StartDefaultTask */
+/* USER CODE BEGIN Header_StartServiceTask */
 /**
-  * @brief  Function implementing the defaultTask thread.
+  * @brief  Function implementing the serviceTask thread.
   * @param  argument: Not used
   * @retval None
   */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
+/* USER CODE END Header_StartServiceTask */
+void StartServiceTask(void *argument)
 {
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
-  /* USER CODE BEGIN StartDefaultTask */
+  /* USER CODE BEGIN StartServiceTask */
   /* Infinite loop */
   for(;;)
   {
     osDelay(1);
   }
-  /* USER CODE END StartDefaultTask */
+  /* USER CODE END StartServiceTask */
 }
 
 /* USER CODE BEGIN Header_INS_Task */
@@ -180,47 +180,40 @@ void INS_Task(void *argument)
   /* USER CODE END INS_Task */
 }
 
-/* USER CODE BEGIN Header_CHASSIS_Task */
+/* USER CODE BEGIN Header_StartRobotCtrlTask */
 /**
-* @brief Function implementing the CHASSIS_TASK thread.
+* @brief Function implementing the robotCtrlTask thread.
 * @param argument: Not used
 * @retval None
 */
-/* USER CODE END Header_CHASSIS_Task */
-void CHASSIS_Task(void *argument)
+/* USER CODE END Header_StartRobotCtrlTask */
+void StartRobotCtrlTask(void *argument)
 {
-  /* USER CODE BEGIN CHASSIS_Task */
-  (void)argument;
-  chassis_task();
-
-  /* chassis_task() only returns when initialization fails. */
-  for(;;)
-  {
-    osDelay(1000);
-  }
-  /* USER CODE END CHASSIS_Task */
-}
-
-/* USER CODE BEGIN Header_StartRcTask */
-/**
-* @brief Function implementing the rcTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartRcTask */
-void StartRcTask(void *argument)
-{
-  /* USER CODE BEGIN StartRcTask */
-  (void)argument;
-  (void)RC_Task_Init();
-
+  /* USER CODE BEGIN StartRobotCtrlTask */
   /* Infinite loop */
   for(;;)
   {
-    RC_Task_Process();
-    osDelay(50);
+    osDelay(1);
   }
-  /* USER CODE END StartRcTask */
+  /* USER CODE END StartRobotCtrlTask */
+}
+
+/* USER CODE BEGIN Header_StartInputTask */
+/**
+* @brief Function implementing the inputTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartInputTask */
+void StartInputTask(void *argument)
+{
+  /* USER CODE BEGIN StartInputTask */
+  /* Infinite loop */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartInputTask */
 }
 
 /* Private application code --------------------------------------------------*/
