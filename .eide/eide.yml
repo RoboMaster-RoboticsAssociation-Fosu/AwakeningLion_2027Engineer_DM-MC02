@@ -135,9 +135,11 @@ virtualFolder:
           folders: []
     - name: APP
       files:
-        - path: User/APP/INS_task.c
+        - path: User/APP/ins_task.c
         - path: User/APP/chassis_task.c
-        - path: User/APP/rc_task.c
+        - path: User/APP/arm_task.c
+        - path: User/APP/input_task.c
+        - path: User/APP/rc_system.c
       folders: []
     - name: Protocol
       files:

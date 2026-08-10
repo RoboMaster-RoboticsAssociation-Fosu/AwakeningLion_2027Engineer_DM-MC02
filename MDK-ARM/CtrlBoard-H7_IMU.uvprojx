@@ -1771,9 +1771,9 @@
           <GroupName>APP</GroupName>
           <Files>
             <File>
-              <FileName>INS_task.c</FileName>
+              <FileName>ins_task.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\APP\INS_task.c</FilePath>
+              <FilePath>..\User\APP\ins_task.c</FilePath>
             </File>
             <File>
               <FileName>chassis_task.c</FileName>
@@ -1781,9 +1781,19 @@
               <FilePath>..\User\APP\chassis_task.c</FilePath>
             </File>
             <File>
-              <FileName>rc_task.c</FileName>
+              <FileName>arm_task.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\APP\rc_task.c</FilePath>
+              <FilePath>..\User\APP\arm_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>input_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\input_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>rc_system.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\rc_system.c</FilePath>
             </File>
           </Files>
         </Group>
