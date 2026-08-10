@@ -4,20 +4,20 @@
  * @brief   四 M3508 麦轮底盘遥控速度闭环。
  *
  * 控制链路：
- * 遥控器 CH2/CH1 -> 麦轮转速 -> 速度 PID -> C620 电流指令 -> CAN2。
+ * 遥控器 CH2/CH1/CH3 -> 麦轮转速 -> 速度 PID -> C620 电流指令 -> CAN1。
  ******************************************************************************
  */
 
 #include "chassis_task.h"
 
-#include "DJI_Motor.h"
 #include "FreeRTOS.h"
+#include "DJI_Motor.h"
 #include "Remote_Control.h"
 #include "bsp_dwt.h"
 #include "cmsis_os2.h"
 #include "fdcan.h"
 #include "pid.h"
-#include "rc_task.h"
+#include "rc_system.h"
 #include "task.h"
 
 #include <math.h>
@@ -25,34 +25,37 @@
 #include <stddef.h>
 
 /* Control timing and safety ------------------------------------------------ */
-#define CHASSIS_TASK_PERIOD_MS              (10U)
-#define CHASSIS_TASK_PERIOD_S               (0.010F)
+#define CHASSIS_TASK_PERIOD_S               (0.001F)
 #define CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS   (50U)
+#define CHASSIS_TASK_NOTIFY_ENABLED         (1UL << 0U)
+#define CHASSIS_TASK_NOTIFY_DISABLED        (1UL << 1U)
+#define CHASSIS_TASK_NOTIFY_MASK            \
+    (CHASSIS_TASK_NOTIFY_ENABLED | CHASSIS_TASK_NOTIFY_DISABLED)
 
-static Chassis_t g_chassis = {
+static ChassisTask_t g_chassis = {
     .wheel_motor = {
         [CHASSIS_WHEEL_RIGHT_FRONT] = {
-            .Motor_Type = DJI_M3508,
-            .ID_Set = {
-                .RxIdentifier = Chassis_3508_Motor2_RxID,
-            },
-        },
-        [CHASSIS_WHEEL_LEFT_FRONT] = {
             .Motor_Type = DJI_M3508,
             .ID_Set = {
                 .RxIdentifier = Chassis_3508_Motor1_RxID,
             },
         },
+        [CHASSIS_WHEEL_LEFT_FRONT] = {
+            .Motor_Type = DJI_M3508,
+            .ID_Set = {
+                .RxIdentifier = Chassis_3508_Motor2_RxID,
+            },
+        },
         [CHASSIS_WHEEL_LEFT_BACK] = {
             .Motor_Type = DJI_M3508,
             .ID_Set = {
-                .RxIdentifier = Chassis_3508_Motor4_RxID,
+                .RxIdentifier = Chassis_3508_Motor3_RxID,
             },
         },
         [CHASSIS_WHEEL_RIGHT_BACK] = {
             .Motor_Type = DJI_M3508,
             .ID_Set = {
-                .RxIdentifier = Chassis_3508_Motor3_RxID,
+                .RxIdentifier = Chassis_3508_Motor4_RxID,
             },
         },
     },
@@ -176,41 +179,51 @@ static void chassis_send_current(void)
     uint8_t group_201_to_204[8] = {0U};
 
     /*
-     * 0x200: slot0=左前(0x201)，slot1=右前，slot2=右后，slot3=左后。
+     * 0x200: slot0=右前(0x201)，slot1=左前，slot2=左后，slot3=右后。
      * 本函数是四个底盘 DJI 电机分组帧的唯一发送者。
      */
     chassis_pack_current(
         group_201_to_204,
         0U,
-        g_chassis.wheel_motor[CHASSIS_WHEEL_LEFT_FRONT].Data.SET_Current);
-    chassis_pack_current(
-        group_201_to_204,
-        1U,
         g_chassis.wheel_motor[CHASSIS_WHEEL_RIGHT_FRONT].Data.SET_Current);
     chassis_pack_current(
         group_201_to_204,
+        1U,
+        g_chassis.wheel_motor[CHASSIS_WHEEL_LEFT_FRONT].Data.SET_Current);
+    chassis_pack_current(
+        group_201_to_204,
         2U,
-        g_chassis.wheel_motor[CHASSIS_WHEEL_RIGHT_BACK].Data.SET_Current);
+        g_chassis.wheel_motor[CHASSIS_WHEEL_LEFT_BACK].Data.SET_Current);
     chassis_pack_current(
         group_201_to_204,
         3U,
-        g_chassis.wheel_motor[CHASSIS_WHEEL_LEFT_BACK].Data.SET_Current);
-    (void)canx_send_data(&hfdcan2,
+        g_chassis.wheel_motor[CHASSIS_WHEEL_RIGHT_BACK].Data.SET_Current);
+    (void)canx_send_data(&hfdcan1,
                          Chassis_3508_MotorA_TxID,
                          group_201_to_204,
                          8U);
 }
 
 static bool chassis_read_remote_command(float *vx_mm_s,
-                                        float *vy_mm_s)
+                                        float *vy_mm_s,
+                                        float *vw_deg_s)
 {
     /* DBUS 满量程 660 对应底盘平移速度 4000 mm/s。 */
     const float remote_speed_scale_mm_s_per_count = 6.060606F;
+    /*
+     * DM_MC02 参考工程用 ch[2] 产生 Yaw 指令，比例为
+     * 0.006 rad/s/count = 0.34377468 deg/s/count。参考工程的
+     * Yaw 以顺时针为正，底盘跟随角速度取反向，因此此处使用
+     * -ch[2] 作为底盘 vw。
+     */
+    const float remote_spin_scale_deg_s_per_count = 0.34377468F;
     int16_t channel_0;
     int16_t channel_1;
+    int16_t channel_2;
 
     if ((vx_mm_s == NULL) || (vy_mm_s == NULL) ||
-        (RC_Task_IsReady() == 0U))
+        (vw_deg_s == NULL) ||
+        (RcSystem_IsReady() == 0U))
     {
         return false;
     }
@@ -218,10 +231,12 @@ static bool chassis_read_remote_command(float *vx_mm_s,
     taskENTER_CRITICAL();
     channel_0 = remote_ctrl.rc.ch[0];
     channel_1 = remote_ctrl.rc.ch[1];
+    channel_2 = remote_ctrl.rc.ch[2];
     taskEXIT_CRITICAL();
 
     channel_0 = chassis_apply_remote_deadzone(channel_0);
     channel_1 = chassis_apply_remote_deadzone(channel_1);
+    channel_2 = chassis_apply_remote_deadzone(channel_2);
 
     *vx_mm_s =
         chassis_clamp((float)channel_1,
@@ -233,6 +248,11 @@ static bool chassis_read_remote_command(float *vx_mm_s,
                       -(float)RC_CH_VALUE_MAX,
                       (float)RC_CH_VALUE_MAX) *
         remote_speed_scale_mm_s_per_count;
+    *vw_deg_s =
+        -chassis_clamp((float)channel_2,
+                       -(float)RC_CH_VALUE_MAX,
+                       (float)RC_CH_VALUE_MAX) *
+        remote_spin_scale_deg_s_per_count;
     return true;
 }
 
@@ -280,33 +300,33 @@ static void chassis_mecanum_calculate(float vx_mm_s,
 {
     /*
      * 旋转速度 deg/s 到轮缘线速度 mm/s：
-     * ((轴距 320.0 mm + 轮距 278.51 mm) / 2) * (pi / 180)
-     * = 299.255 mm * 0.0174532925 rad/deg
-     * = 5.222985 mm/deg。
+     * ((轴距 365.0 mm + 轮距 375.0 mm) / 2) * (pi / 180)
+     * = 370.0 mm * 0.0174532925 rad/deg
+     * = 6.457718 mm/deg。
      */
-    const float rotate_ratio = 5.222985F;
+    const float rotate_ratio = 6.457718F;
     /*
      * 轮缘线速度 mm/s 到减速前电机转速 rpm：
-     * 60 s/min * (M3508 减速比 3591 / 187) / 轮周长 483.0 mm
-     * = 60 * 19.2032086 / 483.0
-     * = 2.385492 rpm/(mm/s)。
+     * 60 s/min * M3508 减速比 19 / 轮周长 478.0 mm
+     * = 1140 / 478
+     * = 2.384937 rpm/(mm/s)。
      */
-    const float wheel_rpm_ratio = 2.385492F;
+    const float wheel_rpm_ratio = 2.384937F;
     float max_wheel_rpm = 0.0F;
     float scale;
     uint8_t wheel;
 
     g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_RIGHT_FRONT] =
-        (-vx_mm_s + vy_mm_s - vw_deg_s * rotate_ratio) *
+        (-vx_mm_s - vy_mm_s - vw_deg_s * rotate_ratio) *
         wheel_rpm_ratio;
     g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_LEFT_FRONT] =
-        (vx_mm_s + vy_mm_s - vw_deg_s * rotate_ratio) *
-        wheel_rpm_ratio;
-    g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_LEFT_BACK] =
         (vx_mm_s - vy_mm_s - vw_deg_s * rotate_ratio) *
         wheel_rpm_ratio;
+    g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_LEFT_BACK] =
+        (vx_mm_s + vy_mm_s - vw_deg_s * rotate_ratio) *
+        wheel_rpm_ratio;
     g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_RIGHT_BACK] =
-        (-vx_mm_s - vy_mm_s - vw_deg_s * rotate_ratio) *
+        (-vx_mm_s + vy_mm_s - vw_deg_s * rotate_ratio) *
         wheel_rpm_ratio;
 
     for (wheel = 0U; wheel < (uint8_t)CHASSIS_WHEEL_COUNT; ++wheel)
@@ -356,7 +376,36 @@ static bool chassis_update_speed_control(const int16_t wheel_speed_rpm[])
     return true;
 }
 
-void Chassis_TaskOnCan2Rx(uint32_t identifier,
+static osThreadId_t g_chassis_task_thread = NULL;
+
+static void chassis_task_step(bool enabled)
+{
+    float vx_mm_s;
+    float vy_mm_s;
+    float vw_deg_s;
+    int16_t wheel_speed_rpm[CHASSIS_WHEEL_COUNT];
+
+    /* 整车锁定、遥控或任一电机反馈失效时发送安全零电流。 */
+    if (!enabled ||
+        !chassis_read_remote_command(&vx_mm_s, &vy_mm_s, &vw_deg_s) ||
+        !chassis_read_wheel_feedback(wheel_speed_rpm))
+    {
+        chassis_reset_pid();
+        chassis_set_zero_current();
+        chassis_send_current();
+        return;
+    }
+
+    chassis_mecanum_calculate(vx_mm_s, vy_mm_s, vw_deg_s);
+    if (!chassis_update_speed_control(wheel_speed_rpm))
+    {
+        chassis_reset_pid();
+        chassis_set_zero_current();
+    }
+    chassis_send_current();
+}
+
+void ChassisTask_OnCan1Rx(uint32_t identifier,
                           uint8_t *data,
                           uint32_t data_len)
 {
@@ -370,16 +419,16 @@ void Chassis_TaskOnCan2Rx(uint32_t identifier,
     switch (identifier)
     {
         case Chassis_3508_Motor1_RxID:
-            wheel = CHASSIS_WHEEL_LEFT_FRONT;
-            break;
-        case Chassis_3508_Motor2_RxID:
             wheel = CHASSIS_WHEEL_RIGHT_FRONT;
             break;
+        case Chassis_3508_Motor2_RxID:
+            wheel = CHASSIS_WHEEL_LEFT_FRONT;
+            break;
         case Chassis_3508_Motor3_RxID:
-            wheel = CHASSIS_WHEEL_RIGHT_BACK;
+            wheel = CHASSIS_WHEEL_LEFT_BACK;
             break;
         case Chassis_3508_Motor4_RxID:
-            wheel = CHASSIS_WHEEL_LEFT_BACK;
+            wheel = CHASSIS_WHEEL_RIGHT_BACK;
             break;
         default:
             return;
@@ -388,37 +437,37 @@ void Chassis_TaskOnCan2Rx(uint32_t identifier,
     DJI_Motor_Info_Update(&g_chassis.wheel_motor[wheel], data, data_len);
 }
 
-void chassis_task(void)
+void ChassisTask_Notify(bool enabled)
 {
-    float vx_mm_s;
-    float vy_mm_s;
-    float vw_deg_s;
-    int16_t wheel_speed_rpm[CHASSIS_WHEEL_COUNT];
+    if (g_chassis_task_thread == NULL)
+    {
+        return;
+    }
 
+    (void)osThreadFlagsSet(
+        g_chassis_task_thread,
+        enabled ? CHASSIS_TASK_NOTIFY_ENABLED :
+                  CHASSIS_TASK_NOTIFY_DISABLED);
+}
+
+void ChassisTask_Run(void)
+{
+    uint32_t notification;
+    bool enabled;
+
+    g_chassis_task_thread = osThreadGetId();
     chassis_set_zero_current();
     chassis_send_current();
 
-    while (1)
+    for (;;)
     {
-        /* 遥控或任一电机反馈失效时清空 PID 并持续发送零电流。 */
-        if (!chassis_read_remote_command(&vx_mm_s, &vy_mm_s) ||
-            !chassis_read_wheel_feedback(wheel_speed_rpm))
-        {
-            chassis_reset_pid();
-            chassis_set_zero_current();
-            chassis_send_current();
-            osDelay(CHASSIS_TASK_PERIOD_MS);
-            continue;
-        }
-
-        vw_deg_s = 0.0F;
-        chassis_mecanum_calculate(vx_mm_s, vy_mm_s, vw_deg_s);
-        if (!chassis_update_speed_control(wheel_speed_rpm))
-        {
-            chassis_reset_pid();
-            chassis_set_zero_current();
-        }
-        chassis_send_current();
-        osDelay(CHASSIS_TASK_PERIOD_MS);
+        /* 两个输入周期都未收到通知时按失能处理，禁止沿用旧输出许可。 */
+        notification = osThreadFlagsWait(CHASSIS_TASK_NOTIFY_MASK,
+                                         osFlagsWaitAny,
+                                         2U);
+        enabled = ((notification & osFlagsError) == 0U) &&
+                  ((notification & CHASSIS_TASK_NOTIFY_DISABLED) == 0U) &&
+                  ((notification & CHASSIS_TASK_NOTIFY_ENABLED) != 0U);
+        chassis_task_step(enabled);
     }
 }

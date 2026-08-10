@@ -21,13 +21,15 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
+#include "FreeRTOS.h"
 #include "cmsis_os2.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "INS_task.h"
+#include "arm_task.h"
 #include "chassis_task.h"
-#include "rc_task.h"
+#include "input_task.h"
+#include "ins_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -63,19 +65,26 @@ const osThreadAttr_t INS_TASK_attributes = {
   .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityRealtime,
 };
-/* Definitions for robotCtrlTask */
-osThreadId_t robotCtrlTaskHandle;
-const osThreadAttr_t robotCtrlTask_attributes = {
-  .name = "robotCtrlTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
-};
 /* Definitions for inputTask */
 osThreadId_t inputTaskHandle;
 const osThreadAttr_t inputTask_attributes = {
   .name = "inputTask",
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityAboveNormal,
+};
+/* Definitions for chassisTask */
+osThreadId_t chassisTaskHandle;
+const osThreadAttr_t chassisTask_attributes = {
+  .name = "chassisTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+/* Definitions for armTask */
+osThreadId_t armTaskHandle;
+const osThreadAttr_t armTask_attributes = {
+  .name = "armTask",
+  .stack_size = 256 * 4,
+  .priority = (osPriority_t) osPriorityLow,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -85,8 +94,9 @@ const osThreadAttr_t inputTask_attributes = {
 
 void StartServiceTask(void *argument);
 void INS_Task(void *argument);
-void StartRobotCtrlTask(void *argument);
 void StartInputTask(void *argument);
+void StartChassisTask(void *argument);
+void StartArmTask(void *argument);
 
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -124,11 +134,14 @@ void MX_FREERTOS_Init(void) {
   /* creation of INS_TASK */
   INS_TASKHandle = osThreadNew(INS_Task, NULL, &INS_TASK_attributes);
 
-  /* creation of robotCtrlTask */
-  robotCtrlTaskHandle = osThreadNew(StartRobotCtrlTask, NULL, &robotCtrlTask_attributes);
-
   /* creation of inputTask */
   inputTaskHandle = osThreadNew(StartInputTask, NULL, &inputTask_attributes);
+
+  /* creation of chassisTask */
+  chassisTaskHandle = osThreadNew(StartChassisTask, NULL, &chassisTask_attributes);
+
+  /* creation of armTask */
+  armTaskHandle = osThreadNew(StartArmTask, NULL, &armTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -175,27 +188,9 @@ void INS_Task(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    INS_task();
+    InsTask_Run();
   }
   /* USER CODE END INS_Task */
-}
-
-/* USER CODE BEGIN Header_StartRobotCtrlTask */
-/**
-* @brief Function implementing the robotCtrlTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartRobotCtrlTask */
-void StartRobotCtrlTask(void *argument)
-{
-  /* USER CODE BEGIN StartRobotCtrlTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartRobotCtrlTask */
 }
 
 /* USER CODE BEGIN Header_StartInputTask */
@@ -208,12 +203,42 @@ void StartRobotCtrlTask(void *argument)
 void StartInputTask(void *argument)
 {
   /* USER CODE BEGIN StartInputTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  (void)argument;
+  InputTask_Run();
+  osThreadExit();
   /* USER CODE END StartInputTask */
+}
+
+/* USER CODE BEGIN Header_StartChassisTask */
+/**
+* @brief Function implementing the chassisTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartChassisTask */
+void StartChassisTask(void *argument)
+{
+  /* USER CODE BEGIN StartChassisTask */
+  (void)argument;
+  ChassisTask_Run();
+  osThreadExit();
+  /* USER CODE END StartChassisTask */
+}
+
+/* USER CODE BEGIN Header_StartArmTask */
+/**
+* @brief Function implementing the armTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartArmTask */
+void StartArmTask(void *argument)
+{
+  /* USER CODE BEGIN StartArmTask */
+  (void)argument;
+  ArmTask_Run();
+  osThreadExit();
+  /* USER CODE END StartArmTask */
 }
 
 /* Private application code --------------------------------------------------*/

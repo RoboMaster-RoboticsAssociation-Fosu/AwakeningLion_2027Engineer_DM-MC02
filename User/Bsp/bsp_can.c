@@ -13,8 +13,9 @@
 
 /* Includes ---------------------------------------------------------------- */
 #include "bsp_can.h"
-#include "fdcan.h"
+#include "arm_task.h"
 #include "chassis_task.h"
+#include "fdcan.h"
 #include "string.h"
 
 /* Defines ----------------------------------------------------------------- */
@@ -209,7 +210,9 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
 		/* 从RX_FIFO0检索Rx消息 */
 		memset(g_Can1RxData, 0, sizeof(g_Can1RxData));	//清空接收缓冲区	
 		HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &RxHeader1, g_Can1RxData);
-			
+		ChassisTask_OnCan1Rx(RxHeader1.Identifier,
+						   g_Can1RxData,
+						   RxHeader1.DataLength);
 	}
 	else if(hfdcan->Instance == FDCAN3)
 	{
@@ -244,15 +247,9 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 		/* 从RX_FIFO1检索Rx消息 */
 		memset(g_Can2RxData, 0, sizeof(g_Can2RxData));
 		HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &RxHeader2, g_Can2RxData);
-		Chassis_TaskOnCan2Rx(RxHeader2.Identifier,
-							g_Can2RxData,
-							RxHeader2.DataLength);
-		switch(RxHeader2.Identifier)
-		{
-//			case Chassis_J4340_Motor_L_RxID:DM_Motor_Info_Update(&Chassis_Ctrl.Joint_Motor[LEFT],g_Can2RxData,RxHeader2.DataLength);break;
-//			case Chassis_J4340_Motor_R_RxID:DM_Motor_Info_Update(&Chassis_Ctrl.Joint_Motor[RIGHT],g_Can2RxData,RxHeader2.DataLength);break;				
-			default: break;
-		}	
+		ArmTask_OnCan2Rx(RxHeader2.Identifier,
+					   g_Can2RxData,
+					   RxHeader2.DataLength);
     }
   }
 }

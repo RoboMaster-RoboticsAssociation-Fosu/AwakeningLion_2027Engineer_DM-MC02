@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file    chassis_task.h
- * @brief   M3508 麦轮底盘任务接口。
+ * @brief   M3508 麦轮底盘控制任务接口。
  ******************************************************************************
  */
 
@@ -11,6 +11,7 @@
 #include "DJI_Motor.h"
 #include "pid.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /**
@@ -26,35 +27,41 @@ typedef enum
 } ChassisWheel_e;
 
 /**
- * @brief 四轮底盘控制实例。
+ * @brief 四轮底盘任务实例。
  */
 typedef struct
 {
-    DJI_Motor_Info_Typedef wheel_motor[CHASSIS_WHEEL_COUNT];
-    PidController wheel_speed_pid[CHASSIS_WHEEL_COUNT];
+    DJI_Motor_Info_t wheel_motor[CHASSIS_WHEEL_COUNT];
+    PidController_t wheel_speed_pid[CHASSIS_WHEEL_COUNT];
     float wheel_speed_reference_rpm[CHASSIS_WHEEL_COUNT];
-} Chassis_t;
+} ChassisTask_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief 接收 CAN2 中断转发的四个 M3508 反馈帧。
+ * @brief 接收 CAN1 中断转发的四个 M3508 反馈帧。
  * @param identifier 经典 CAN 标准标识符。
  * @param data 8 字节反馈数据。
  * @param data_len HAL FDCAN DLC 编码。
  */
-void Chassis_TaskOnCan2Rx(uint32_t identifier,
+void ChassisTask_OnCan1Rx(uint32_t identifier,
                           uint8_t *data,
                           uint32_t data_len);
 
 /**
- * @brief 底盘 FreeRTOS owner 任务。
- * @note 遥控器在线且四轮反馈有效时执行速度闭环；任一条件失效时
- *       持续发送零电流。
+ * @brief 发布本周期整车输出许可并唤醒底盘任务。
+ * @param enabled true 允许闭环输出；false 复位 PID 并发送零电流。
+ * @note 仅在任务上下文调用；任务尚未启动时通知会被安全忽略。
  */
-void chassis_task(void);
+void ChassisTask_Notify(bool enabled);
+
+/**
+ * @brief 运行底盘控制任务生命周期。
+ * @note 调用者必须是 chassisTask 对应的 FreeRTOS 线程；函数正常运行时不返回。
+ */
+void ChassisTask_Run(void);
 
 #ifdef __cplusplus
 }
