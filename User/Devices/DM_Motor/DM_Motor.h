@@ -21,11 +21,6 @@
 #include <stdbool.h>
 
 /* Defines ------------------------------------------------------------------ */
-#define Chassis_J4340_Motor_L_RxID		0x11		/* 底盘J4310左电机接收ID */
-#define Chassis_J4340_Motor_L_TxID		0x01		/* 底盘J4310左电机发送ID */
-#define Chassis_J4340_Motor_R_RxID		0x12		/* 底盘J4310右电机接收ID */
-#define Chassis_J4340_Motor_R_TxID		0x02		/* 底盘J4310右电机发送ID */
-
 #define MIT_MODE 					0x000		/* MIT模式 */
 #define POS_MODE					0x100		/* 位置模式 */
 #define SPEED_MODE					0x200		/* 速度模式 */
@@ -49,15 +44,15 @@
 #define J4340_T_MIN 	-28.0f
 #define J4340_T_MAX 	28.0f
 
-/* Enums -------------------------------------------------------------------- */
-/**
- * @brief 电机初始化状态枚举
- */
-typedef enum{
-	DM_Init = 1,
-	DM_DisInit = 0,
-}DM_Motor_Init_e;
+#define J10010L_P_MIN    -12.5f
+#define J10010L_P_MAX    12.5f
+#define J10010L_V_MIN    -25.0f
+#define J10010L_V_MAX    25.0f
+/* MIT 协议编码满量程；不是电机机械峰值扭矩 120 Nm。 */
+#define J10010L_T_MIN    -200.0f
+#define J10010L_T_MAX    200.0f
 
+/* Enums -------------------------------------------------------------------- */
 /**
  * @brief DM电机类型枚举
  */
@@ -65,6 +60,7 @@ typedef enum{
     DM_J4310 = 0,
     DM_J4340,
     DM_J8006,
+    DM_J10010L,
     DM_MOTOR_TYPE_NUM,
 }DM_Motor_Type_e;
 
@@ -109,18 +105,31 @@ typedef struct
 }DM_Motor_Data_t;
 
 /**
- * @brief DM电机信息结构体
+ * @brief DM电机实例，包含固定装配配置和最近一次反馈。
  */
 typedef struct
 {
     DM_Motor_mode_e Mode;		    /* 电机模式 */
-    DM_Motor_Init_e Motor_state;	/* 电机状态 */
     DM_Motor_Type_e Motor_Type;	    /* 电机类型 */
     DM_Motor_ID_t ID_Set;		    /* ID设置 */
     DM_Motor_Data_t Data;		    /* 数据 */
 	bool feedback_valid;				/* 已收到至少一帧合法反馈 */
 	uint32_t last_feedback_time_ms;	/* 最近合法反馈时间 */
 }DM_Motor_Info_t;
+
+/**
+ * @brief 使用固定模式、型号和收发 ID 静态创建一个 DM 电机实例。
+ * @note 反馈数据和在线状态由 C 的静态零初始化完成，不需要额外 Init。
+ */
+#define DM_MOTOR_CREATE(mode_value, type_value, tx_id_value, rx_id_value) \
+	{ \
+		.Mode = (mode_value), \
+		.Motor_Type = (type_value), \
+		.ID_Set = { \
+			.TxIdentifier = (tx_id_value), \
+			.RxIdentifier = (rx_id_value), \
+		}, \
+	}
 
 /* Externs ------------------------------------------------------------------ */
 
@@ -130,10 +139,6 @@ uint8_t DM_Disable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint
 uint8_t DM_Save_Motor_Zero(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8_t delay_time);
 void DM_Motor_Info_Update(DM_Motor_Info_t *motor, uint8_t *rx_data,uint32_t data_len);
 uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time);
-float Hex_To_Float(uint32_t *Byte,int num);
-uint32_t FloatTohex(float HEX);
-float uint_to_float(int x_int, float x_min, float x_max, int bits);
-int float_to_uint(float x_float, float x_min, float x_max, int bits);
 
 /* -------------------------------------------------------------------------- */
 #endif /* __DM_MOTOR_H */
