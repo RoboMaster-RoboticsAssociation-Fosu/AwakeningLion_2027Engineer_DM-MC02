@@ -12,8 +12,8 @@
  */
 
 /* Define to prevent recursive inclusion ------------------------------------ */
-#ifndef __INS_TASK_H
-#define __INS_TASK_H
+#ifndef INS_TASK_H
+#define INS_TASK_H
 
 /* Includes ----------------------------------------------------------------- */
 #include "stdint.h"
@@ -86,10 +86,10 @@ typedef struct
 extern INS_t INS;				// 姿态信息结构体变量
 
 /* Functions ---------------------------------------------------------------- */
-void INS_Init(void);
-void INS_task(void);
+void InsTask_Init(void);
+void InsTask_Run(void);
 void BodyFrameToEarthFrame(const float *vecBF, float *vecEF, float *q);
 void EarthFrameToBodyFrame(const float *vecEF, float *vecBF, float *q);
 
 /* -------------------------------------------------------------------------- */
-#endif /* __INS_TASK_H */
+#endif /* INS_TASK_H */

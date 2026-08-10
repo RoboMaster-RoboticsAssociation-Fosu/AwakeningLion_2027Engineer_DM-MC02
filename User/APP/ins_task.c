@@ -44,7 +44,7 @@ static uint32_t ins_warmup_start_ms;	// 姿态滤波预热起始时刻
   * @return 无
   * @note   无
   */
-void INS_Init(void)
+void InsTask_Init(void)
 { 
 	mahony_init(&mahony,1.0f,0.0f,0.001f);
    	INS.AccelLPF = 0.0089f;
@@ -60,9 +60,9 @@ void INS_Init(void)
   * @return 无
   * @note   此函数在操作系统任务中循环调用
   */
-void INS_task(void)
+void InsTask_Run(void)
 {
-	 INS_Init();
+	 InsTask_Init();
 	 
 	 while(1)
 	 {	

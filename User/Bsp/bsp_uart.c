@@ -13,7 +13,7 @@
 
 /* Includes ---------------------------------------------------------------- */
 #include "bsp_uart.h"
-#include "rc_task.h"
+#include "rc_system.h"
 #include "Unitree_Motor.h"
 /* Defines ----------------------------------------------------------------- */
 
@@ -118,7 +118,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,uint16_t Size)
 {
 	if(huart == &huart5)
 	{
-		RC_Task_UartRxEvent(huart,Size);
+		RcSystem_UartRxEvent(huart,Size);
 	} 
 	else if(huart == &huart2)
 	{
@@ -134,7 +134,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,uint16_t Size)
   */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-	RC_Task_UartTxComplete(huart);
+	RcSystem_UartTxComplete(huart);
 }
 
 /**
@@ -145,7 +145,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
   */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-	RC_Task_UartError(huart);
+	RcSystem_UartError(huart);
 }
 
 /* ------------------------------------------------------------------------- */

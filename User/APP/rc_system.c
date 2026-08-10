@@ -1,6 +1,6 @@
 /**
  ******************************************************************************
- * @file    rc_task.c
+ * @file    rc_system.c
  * @version V1.0.0
  * @date    2026.07.19
  * @brief   UART5 DBUS 双缓冲 DMA 接收与调试信息发送实现
@@ -14,12 +14,11 @@
  */
 
 /* Includes ----------------------------------------------------------------- */
-#include "rc_task.h"
+#include "rc_system.h"
 #include "DbgDisp.h"
 #include "FreeRTOS.h"
 #include "Remote_Control.h"
 #include "bsp_dwt.h"
-#include "cmsis_os2.h"
 #include "task.h"
 #include "usart.h"
 #include <string.h>
@@ -37,48 +36,31 @@
 /* Global variable --------------------------------------------------------- */
 
 /* Private variables ------------------------------------------------------- */
-/* DMA缓冲使用普通静态数组，32字节对齐便于后续启用D-Cache时维护。 */
-static uint8_t g_rc_debug_tx_buffer[DBG_FRAME_MAX] RC_DMA_BUFFER_ALIGN;
-static uint8_t g_rc_debug_rx_buffer[DBG_FRAME_MAX];
-static uint8_t g_rc_debug_dma_rx_buffer[DBG_DMA_RX_N];
-static uint8_t g_rc_debug_event_rx_buffer[DBG_EVENT_RX_N];
-static DbgObj_t g_rc_debug_objects[DBG_MAX_OBJ];
-static Dbg_t g_rc_debug = {
-    {
-        &huart5,
-        DBG_TX_DMA,
-        DBG_TIMEOUT_MS,
-        g_rc_debug_tx_buffer,
-        (uint16_t)sizeof(g_rc_debug_tx_buffer),
-        g_rc_debug_rx_buffer,
-        (uint16_t)sizeof(g_rc_debug_rx_buffer),
-        g_rc_debug_dma_rx_buffer,
-        (uint16_t)sizeof(g_rc_debug_dma_rx_buffer),
-        g_rc_debug_event_rx_buffer,
-        (uint16_t)sizeof(g_rc_debug_event_rx_buffer),
-        g_rc_debug_objects,
-        (uint8_t)(sizeof(g_rc_debug_objects) /
-                  sizeof(g_rc_debug_objects[0])),
+/* 单例整体对齐使首成员 debug.tx_buffer 满足 UART TX DMA 对齐要求。 */
+static RcSystem_t g_rc_system RC_DMA_BUFFER_ALIGN = {
+    .debug = {
+        .display = {
+            .config = {
+                .huart = &huart5,
+                .tx_mode = DBG_TX_DMA,
+                .timeout_ms = DBG_TIMEOUT_MS,
+                .tx_buf = g_rc_system.debug.tx_buffer,
+                .tx_cap = (uint16_t)sizeof(g_rc_system.debug.tx_buffer),
+                .obj_buf = g_rc_system.debug.objects,
+                .obj_cap =
+                    (uint8_t)(sizeof(g_rc_system.debug.objects) /
+                              sizeof(g_rc_system.debug.objects[0])),
+            },
+        },
     },
-    {0},
+    .receive = {
+        .restart_pending = 1U,
+    },
 };
-/** @brief 串行化任务上下文中的调试帧编码与 UART DMA 启动。 */
-static osMutexId_t g_rc_debug_mutex;
 
 static uint8_t g_rc_dma_rx_buffer[RC_DMA_BUFFER_COUNT]
                                   [SBUS_RX_BUF_LEN]
     RC_DMA_BUFFER_ALIGN;
-static volatile uint8_t g_rc_config_valid = 0U;
-static volatile uint8_t g_rc_ready = 0U;
-static volatile uint8_t g_rc_restart_pending = 0U;
-static volatile uint8_t g_rc_has_valid_frame = 0U;
-static volatile uint32_t g_rc_last_valid_time_ms = 0U;
-static volatile uint32_t g_rc_valid_frame_count = 0U;
-static volatile uint32_t g_rc_rejected_frame_count = 0U;
-static volatile uint8_t g_rc_edge_history_valid = 0U;
-static volatile uint8_t
-    g_rc_previous_switch[REMOTE_SWITCH_COUNT] = {0U};
-static volatile int16_t g_rc_previous_iw = 0;
 
 /* Private function prototypes --------------------------------------------- */
 static HAL_StatusTypeDef RC_StartDmaDoubleBuffer(void);
@@ -91,45 +73,16 @@ static void RC_DmaError(DMA_HandleTypeDef *hdma);
 static void RC_StopAndRequestRestart(UART_HandleTypeDef *huart);
 static void RC_UpdateOfflineState(uint32_t now_ms);
 static void RC_ResetEdgeState(void);
-static void RC_UpdateInputEdges(const Remote_Info_Typedef *remote);
+static void RC_UpdateInputEdges(const Remote_Info_t *remote);
 static uint32_t RC_GetSwitchEdge(uint8_t previous, uint8_t current);
 static uint32_t RC_GetIwEdges(int16_t previous, int16_t current);
 
 /* Functions --------------------------------------------------------------- */
-HAL_StatusTypeDef RC_Task_Init(void)
-{
-    if (g_rc_debug_mutex == NULL)
-    {
-        g_rc_debug_mutex = osMutexNew(NULL);
-        if (g_rc_debug_mutex == NULL)
-        {
-            return HAL_ERROR;
-        }
-    }
-
-    g_rc_config_valid = 0U;
-    g_rc_ready = 0U;
-    g_rc_restart_pending = 1U;
-    g_rc_has_valid_frame = 0U;
-    g_rc_last_valid_time_ms = 0U;
-    g_rc_valid_frame_count = 0U;
-    g_rc_rejected_frame_count = 0U;
-    RC_ResetEdgeState();
-
-    g_rc_config_valid = 1U;
-    return RC_StartDmaDoubleBuffer();
-}
-
-void RC_Task_Process(void)
+void RcSystem_Process(void)
 {
     const uint32_t now_ms = DWT_GetTimeMs();
 
-    if (g_rc_config_valid == 0U)
-    {
-        return;
-    }
-
-    if (g_rc_restart_pending != 0U)
+    if (g_rc_system.receive.restart_pending != 0U)
     {
         (void)RC_StartDmaDoubleBuffer();
     }
@@ -137,45 +90,40 @@ void RC_Task_Process(void)
     RC_UpdateOfflineState(now_ms);
 }
 
-DbgRet RC_Task_DebugSendArgs(const char *name, double value, ...)
+DbgRet RcSystem_DebugSendArgs(const char *name, double value, ...)
 {
     DbgRet result = DBG_OK;
     va_list arguments;
 
-    if ((g_rc_debug_mutex == NULL) ||
-        (osMutexAcquire(g_rc_debug_mutex, osWaitForever) != osOK))
-    {
-        return DBG_IO_ERR;
-    }
-
     va_start(arguments, value);
-    result = Dbg_SendVArgs(&g_rc_debug, name, value, arguments);
+    result = Dbg_SendVArgs(&g_rc_system.debug.display,
+                           name,
+                           value,
+                           arguments);
     va_end(arguments);
-    if ((osMutexRelease(g_rc_debug_mutex) != osOK) &&
-        (result == DBG_OK))
-    {
-        result = DBG_IO_ERR;
-    }
 
     return result;
 }
 
-uint8_t RC_Task_IsReady(void)
+uint8_t RcSystem_IsReady(void)
 {
-    return ((g_rc_ready != 0U) && (remote_ctrl.rc_lost == false)) ? 1U : 0U;
+    return ((g_rc_system.receive.ready != 0U) &&
+            (remote_ctrl.rc_lost == false))
+               ? 1U
+               : 0U;
 }
 
-uint32_t RC_Task_GetValidFrameCount(void)
+uint32_t RcSystem_GetValidFrameCount(void)
 {
-    return g_rc_valid_frame_count;
+    return g_rc_system.diagnostics.valid_frame_count;
 }
 
-uint32_t RC_Task_GetRejectedFrameCount(void)
+uint32_t RcSystem_GetRejectedFrameCount(void)
 {
-    return g_rc_rejected_frame_count;
+    return g_rc_system.diagnostics.rejected_frame_count;
 }
 
-void RC_Task_UartRxEvent(UART_HandleTypeDef *huart, uint16_t size)
+void RcSystem_UartRxEvent(UART_HandleTypeDef *huart, uint16_t size)
 {
     if (huart != &huart5)
     {
@@ -193,20 +141,20 @@ void RC_Task_UartRxEvent(UART_HandleTypeDef *huart, uint16_t size)
     }
 }
 
-void RC_Task_UartError(UART_HandleTypeDef *huart)
+void RcSystem_UartError(UART_HandleTypeDef *huart)
 {
     if (huart != &huart5)
     {
         return;
     }
 
-    Dbg_TxDone(&g_rc_debug, huart);
+    Dbg_TxDone(&g_rc_system.debug.display, huart);
     RC_StopAndRequestRestart(huart);
 }
 
-void RC_Task_UartTxComplete(UART_HandleTypeDef *huart)
+void RcSystem_UartTxComplete(UART_HandleTypeDef *huart)
 {
-    Dbg_TxDone(&g_rc_debug, huart);
+    Dbg_TxDone(&g_rc_system.debug.display, huart);
 }
 
 /* Private functions ------------------------------------------------------- */
@@ -275,14 +223,14 @@ static HAL_StatusTypeDef RC_StartDmaDoubleBuffer(void)
         ATOMIC_SET_BIT(huart->Instance->CR1, USART_CR1_IDLEIE);
         __DMB();
         ATOMIC_SET_BIT(huart->Instance->CR3, USART_CR3_DMAR);
-        g_rc_restart_pending = 0U;
+        g_rc_system.receive.restart_pending = 0U;
     }
     else
     {
         huart->ErrorCode |= HAL_UART_ERROR_DMA;
         huart->RxState = HAL_UART_STATE_READY;
         huart->ReceptionType = HAL_UART_RECEPTION_STANDARD;
-        g_rc_restart_pending = 1U;
+        g_rc_system.receive.restart_pending = 1U;
     }
 
     taskEXIT_CRITICAL();
@@ -295,16 +243,16 @@ static void RC_ProcessDmaFrame(const uint8_t frame[SBUS_RX_BUF_LEN])
     __DMB();
     if (RC_IsDbusFrameValid(frame) == 0U)
     {
-        g_rc_rejected_frame_count++;
+        g_rc_system.diagnostics.rejected_frame_count++;
         return;
     }
 
     SBUS_TO_RC(frame, &remote_ctrl);
     RC_UpdateInputEdges(&remote_ctrl);
-    g_rc_last_valid_time_ms = DWT_GetTimeMs();
-    g_rc_has_valid_frame = 1U;
-    g_rc_ready = 1U;
-    g_rc_valid_frame_count++;
+    g_rc_system.receive.last_valid_time_ms = DWT_GetTimeMs();
+    g_rc_system.receive.has_valid_frame = 1U;
+    g_rc_system.receive.ready = 1U;
+    g_rc_system.diagnostics.valid_frame_count++;
     __DMB();
 }
 
@@ -391,14 +339,14 @@ static void RC_DmaError(DMA_HandleTypeDef *hdma)
     huart->ErrorCode |= HAL_UART_ERROR_DMA;
     huart->RxState = HAL_UART_STATE_READY;
     huart->ReceptionType = HAL_UART_RECEPTION_STANDARD;
-    g_rc_ready = 0U;
-    g_rc_restart_pending = 1U;
+    g_rc_system.receive.ready = 0U;
+    g_rc_system.receive.restart_pending = 1U;
 }
 
 static void RC_StopAndRequestRestart(UART_HandleTypeDef *huart)
 {
-    g_rc_ready = 0U;
-    g_rc_restart_pending = 1U;
+    g_rc_system.receive.ready = 0U;
+    g_rc_system.receive.restart_pending = 1U;
     (void)HAL_UART_AbortReceive(huart);
 }
 
@@ -408,8 +356,8 @@ static void RC_UpdateOfflineState(uint32_t now_ms)
 
     taskENTER_CRITICAL();
     timed_out =
-        ((g_rc_has_valid_frame == 0U) ||
-         ((uint32_t)(now_ms - g_rc_last_valid_time_ms) >
+        ((g_rc_system.receive.has_valid_frame == 0U) ||
+         ((uint32_t)(now_ms - g_rc_system.receive.last_valid_time_ms) >
           RC_OFFLINE_TIMEOUT_MS))
             ? 1U
             : 0U;
@@ -418,7 +366,7 @@ static void RC_UpdateOfflineState(uint32_t now_ms)
         memset(&remote_ctrl, 0, sizeof(remote_ctrl));
         remote_ctrl.rc_lost = true;
         RC_ResetEdgeState();
-        g_rc_ready = 0U;
+        g_rc_system.receive.ready = 0U;
     }
     else
     {
@@ -435,13 +383,13 @@ static void RC_ResetEdgeState(void)
 {
     uint8_t switch_index;
 
-    g_rc_edge_history_valid = 0U;
-    g_rc_previous_iw = 0U;
+    g_rc_system.edge.valid = 0U;
+    g_rc_system.edge.previous_iw = 0U;
     for (switch_index = 0U;
          switch_index < (uint8_t)REMOTE_SWITCH_COUNT;
          ++switch_index)
     {
-        g_rc_previous_switch[switch_index] = 0U;
+        g_rc_system.edge.previous_switch[switch_index] = 0U;
     }
     Remote_Edge_Reset();
 }
@@ -450,7 +398,7 @@ static void RC_ResetEdgeState(void)
  * @brief 对每个有效 DBUS 帧解析 SW 和 iw 边沿并发布一个原子批次。
  * @note 在 DMA 完成中断路径调用，避免 50 ms rcTask 周期漏掉快速切换。
  */
-static void RC_UpdateInputEdges(const Remote_Info_Typedef *remote)
+static void RC_UpdateInputEdges(const Remote_Info_t *remote)
 {
     uint32_t switch_edges[REMOTE_SWITCH_COUNT] = {
         RC_SWITCH_EDGE_NONE,
@@ -464,17 +412,17 @@ static void RC_UpdateInputEdges(const Remote_Info_Typedef *remote)
         return;
     }
 
-    if (g_rc_edge_history_valid == 0U)
+    if (g_rc_system.edge.valid == 0U)
     {
         for (switch_index = 0U;
              switch_index < (uint8_t)REMOTE_SWITCH_COUNT;
              ++switch_index)
         {
-            g_rc_previous_switch[switch_index] =
+            g_rc_system.edge.previous_switch[switch_index] =
                 remote->rc.s[switch_index];
         }
-        g_rc_previous_iw = remote->rc.iw;
-        g_rc_edge_history_valid = 1U;
+        g_rc_system.edge.previous_iw = remote->rc.iw;
+        g_rc_system.edge.valid = 1U;
         return;
     }
 
@@ -487,14 +435,14 @@ static void RC_UpdateInputEdges(const Remote_Info_Typedef *remote)
 
         switch_edges[switch_index] =
             RC_GetSwitchEdge(
-                g_rc_previous_switch[switch_index],
+                g_rc_system.edge.previous_switch[switch_index],
                 current_switch);
-        g_rc_previous_switch[switch_index] = current_switch;
+        g_rc_system.edge.previous_switch[switch_index] = current_switch;
     }
 
-    iw_edges = RC_GetIwEdges(g_rc_previous_iw,
+    iw_edges = RC_GetIwEdges(g_rc_system.edge.previous_iw,
                              remote->rc.iw);
-    g_rc_previous_iw = remote->rc.iw;
+    g_rc_system.edge.previous_iw = remote->rc.iw;
     Remote_Edge_PublishFromISR(
         switch_edges[REMOTE_SWITCH_SW1],
         switch_edges[REMOTE_SWITCH_SW2],
