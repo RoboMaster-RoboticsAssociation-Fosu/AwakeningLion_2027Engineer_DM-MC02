@@ -1,257 +1,120 @@
 # 2027 工程机器人控制架构
 
-## 1. 决策状态
+## 1. 当前决策
 
-本文记录 `new_robot_code` 向本工程逐步再实现时采用的架构基线。旧工程只作为功能和协议参考，不整体复制目录、任务和通用电机模型。
+本文记录 `new_robot_code` 向本工程逐步再实现时采用的当前架构。旧工程只作为功能、参数和协议参考，不整体复制目录、任务或通用电机模型。
 
-- 采用“单控制 owner + 独立控制系统 + 直接使用厂商电机驱动”的结构。
-- `RobotControlTask` 是机器人控制生命周期和电机发送的唯一 owner，基准周期固定为 **1 ms（1 kHz）**。
-- `ChassisSystem` 与 `ArmSystem` 是独立控制模块，但不是独立 FreeRTOS 任务；二者由 `RobotControlTask` 在同一周期依次调用。
-- 不建立统一 `MotorIo`、通用 `Motor_t`、厂商联合体、字符串查找或运行时电机注册表。
-- 当前 `configTICK_RATE_HZ = 1000`，控制任务使用绝对节拍等待，不使用本次执行结束后再相对延时的方式。
-- 云台与发射不属于当前目标系统，不保留对应任务、控制状态和电机输出链路。
+- 不建立统一大电机抽象层，底盘和机械臂直接使用各自厂商驱动。
+- 不再保留 `RobotControlTask`、`ChassisSystem` 和 `ArmSystem`。
+- `InputTask` 处理遥控输入、整车锁定状态，并通过 CMSIS-RTOS2 线程标志唤醒 `ChassisTask` 与 `ArmTask`。
+- `ChassisTask` 和 `ArmTask` 分别拥有各自的控制生命周期、跨周期状态和电机发送路径。
+- 上电默认锁定；SW2 进入 UP 的边沿解锁，进入 DOWN 的边沿锁定，同周期同时出现时锁定优先。
+- 遥控器未就绪时，即使锁定状态已经解开，也不允许底盘或机械臂输出。
+- 云台、发射和 P1010B 后腿电机不属于当前复现范围。
 
-## 2. 设计原则
+## 2. 任务模型
 
-1. 算法与硬件解耦：PID、运动学、轨迹和重力补偿只处理带单位的输入与输出，不包含 HAL、FreeRTOS 或厂商协议。
-2. 驱动保持独立：DJI、P1010B、Damiao、GO8010 分别维护自己的协议类型、反馈、命令、初始化和在线状态，不强行统一成一种电机对象。
-3. 发送 owner 唯一：只有 `RobotControlTask` 能调用电机驱动的发送接口；其他 task、system 和 ISR 都不能直接发送电机命令。
-4. 中断只搬运数据：FDCAN/UART/DMA 回调只取走硬件数据并交给对应 BSP/driver 接收路径，不调用底盘、机械臂和安全策略。
-5. 连续量使用最新快照：遥控器、IMU 和电机反馈允许覆盖旧样本；只有不能丢失的离散动作才使用队列。
-6. 主控制链在一个任务入口中可见：输入快照 → 驱动反馈 → 安全门控 → 底盘/机械臂计算 → 厂商驱动发送 → 周期等待。
-7. 使用明确的机构角色和物理单位；不同电机输出保持各自真实单位，不建立含义模糊的统一 `target`、`value` 或 `output`。
-8. 按可构建、可观测、可回退的小步再实现；不为尚未接入的执行器、故障和平台预建接口。
+| 任务 | 当前调度方式 | 主要职责 |
+| --- | --- | --- |
+| `InsTask` | 1 ms 周期 | IMU 采样与姿态解算 |
+| `InputTask` | 1 ms 周期 | 推进 `RcSystem`、读取 SW2 边沿、维护锁定状态、通知两个控制任务 |
+| `ChassisTask` | 输入通知驱动，2 tick 安全超时 | 遥控快照、反馈检查、麦轮解算、四轮 PID、CAN1 电流发送 |
+| `ArmTask` | 输入通知驱动，2 tick 安全超时 | 机械臂状态与目标控制、CAN2 Damiao 命令发送 |
+| `ServiceTask` | 非实时周期 | USB 和后续低优先级诊断 |
 
-## 3. 任务模型
+`InputTask` 每次完成输入处理后，向两个控制任务发布当前输出许可。通知只负责唤醒，控制任务在等待错误或连续两个输入周期未收到通知时按失能处理，不能沿用旧的输出许可。
 
-最终保留四个常驻应用任务，其中前三个组成实时数据链，`ServiceTask` 只承担非实时工作。
+两个控制任务相互独立：一个任务发生正常阻塞不会直接阻塞另一个任务。任务拆分不能防止高优先级死循环导致的 CPU 饥饿，因此控制路径仍禁止无限循环、忙等待和带延时的驱动发送。
 
-| 任务 | 调度方式 | 主要职责 | 禁止事项 |
-| --- | --- | --- | --- |
-| `InsTask` | 1 ms 绝对节拍 | IMU 采样、姿态解算、发布传感器快照 | 不发送电机，不决定机器人模式 |
-| `RobotControlTask` | 1 ms 绝对节拍 | 复制快照、读取电机反馈、安全门控、底盘和机械臂计算、直接发送所有电机命令 | 不阻塞，不使用相对 `osDelay(1)` 维持周期 |
-| `InputTask` | DMA 事件唤醒或短周期 | 解析遥控器/自定义控制器，发布输入快照和离散边沿 | 不运行机构控制，不发送电机 |
-| `ServiceTask` | 10～20 ms 低优先级 | USB、VOFA、LED、非实时诊断和执行时间统计 | 不进入安全闭环，不发送电机 |
+## 3. 实时链路
 
-`ChassisSystem`、`ArmSystem`、`RobotSystem`、模式状态机和安全门控都是普通控制模块，不因模块独立而自动创建线程。
+```text
+UART5 DBUS / DMA
+        │
+        ▼
+    RcSystem
+        │
+        ▼
+InputTask（1 ms）
+  SW2边沿 → locked
+  enabled = !locked && RcSystem_IsReady()
+        │
+        ├──线程标志──► ChassisTask ─► DJI driver ─► CAN1
+        │
+        └──线程标志──► ArmTask ─────► Damiao driver ─► CAN2
+```
 
-只有出现下列实测证据时，才考虑新增独立控制或通信任务：
+底盘任务保持一屏可见的主链：
 
-- 某个驱动存在无法消除的阻塞等待；
-- USART10 接收缓存持续积压或溢出；
-- `RobotControlTask` 最坏执行时间长期超过 1 ms 预算的 70%～80%；
-- 某项规划计算明确需要不同频率，并且不能在 1 ms 周期内完成；
-- 某机构需要独立暂停、重启或故障隔离生命周期。
+```text
+读取遥控快照 → 检查四轮反馈 → 安全门控 → 麦轮解算 → 速度 PID → CAN1 电流帧
+```
 
-即使将来把机械臂规划拆为低频任务，机械臂低层闭环和电机发送仍留在 `RobotControlTask`。
+机械臂当前只实现安全基线：
+
+```text
+读取输出许可 → 状态变化时重建待发送集合 → 每次最多发送一个电机使能/失能帧 → 记录返回值
+```
 
 ## 4. 硬件通信归属
 
-| 物理端口 | 协议 | 发送 owner | 目标配置 |
+| 物理端口 | 协议/设备 | 发送所有者 | 配置 |
 | --- | --- | --- | --- |
-| CAN1 | DJI、P1010B | `RobotControlTask` 直接调用两个驱动 | 经典 CAN，1 Mbit/s |
-| CAN2 | Damiao | `RobotControlTask` 直接调用 Damiao 驱动 | 经典 CAN，1 Mbit/s |
-| CAN3 | 保留，具体用途待定 | 暂无业务发送 owner | 保持启用，不提前绑定设备或控制逻辑 |
-| USART10 | GO8010 | `RobotControlTask` 直接调用 GO8010 驱动 | 4 Mbit/s，DMA 接收与非阻塞发送 |
+| CAN1 | DJI 底盘 | `ChassisTask` | 经典 CAN，1 Mbit/s |
+| CAN2 | Damiao 机械臂 | `ArmTask` | 经典 CAN，1 Mbit/s |
+| CAN3 | 保留 | 暂无业务发送所有者 | 保持启用 |
+| USART10 | GO8010 | 后续归 `ArmTask` | 4 Mbit/s，DMA 接收与非阻塞发送 |
 
-CAN3 在当前复现阶段只保留 CubeMX 初始化和底层资源，不接入 `RobotControlTask` 的业务链路；确认真实设备和协议后再补充分配。
+FDCAN/UART/DMA 中断只接收并更新对应任务拥有的反馈实例，不进行机构控制计算，也不发送新的控制目标。
 
-驱动分别负责：
-
-- 帧格式、校验、量程换算和协议状态；
-- 接收缓存、帧头重同步和反馈时间戳；
-- 电机使能、模式设置和该协议真实需要的启动步骤；
-- 本协议内部的分组发送或命令编码。
-
-驱动不知道底盘、机械臂和遥控模式。`RobotControlTask` 只做明确的机器人角色接线，例如将 DJI 轮速反馈填入 `ChassisFeedback_t`，将 `ChassisCommand_t` 的四轮电流分别交给 DJI 驱动；这种显式接线不是通用电机抽象层。
-
-## 5. 模块与依赖方向
-
-```text
-FreeRTOS / HAL
-    │
-    ├── InsTask ─────发布 SensorSnapshot────┐
-    ├── InputTask ───发布 InputSnapshot─────┤
-    ├── ServiceTask ─只读诊断快照           │
-    │                                      │
-    └── RobotControlTask（1 ms owner）◄─────┘
-            │
-            ├── RobotSafety
-            ├── RobotSystem
-            │     ├── ChassisSystem
-            │     └── ArmSystem
-            │
-            ├── DJI + P1010B driver / CAN1
-            ├── Damiao driver / CAN2
-            └── GO8010 driver / USART10
-```
-
-依赖规则：
-
-- task 层负责调度、快照和 owner 生命周期；
-- system 层负责机器人策略、机构状态和控制计算，不调用 HAL 或厂商驱动；
-- `RobotControlTask` 是 system 与厂商驱动之间的显式接线位置；
-- driver 层只负责一种协议；
-- BSP/HAL adapter 负责具体 FDCAN、UART、DMA 和时间源；
-- `ServiceTask` 只能读取诊断快照，不能反向参与电机控制。
-
-`RobotSystem` 只协调底盘和机械臂的共享模式与互锁。`ChassisSystem` 和 `ArmSystem` 保持各自实现和跨周期状态；合并的是调度 owner，不是把两套控制算法写进一个大函数。
-
-## 6. 1 ms 控制时序
-
-以下代码表达调用顺序，不预先规定尚未接入驱动的最终函数名。
-
-```c
-void RobotControlTask(void *argument)
-{
-    TickType_t last_wake_tick = xTaskGetTickCount();
-
-    VendorDrivers_Init();
-    RobotSystem_Init();
-
-    for (;;)
-    {
-        InputSnapshot_Copy(&input);
-        SensorSnapshot_Copy(&sensor);
-
-        DjiDriver_CopyFeedback(&dji_feedback);
-        P1010BDriver_CopyFeedback(&p1010b_feedback);
-        DamiaoDriver_CopyFeedback(&damiao_feedback);
-        Go8010Driver_ProcessRxAndCopyFeedback(&go8010_feedback);
-
-        ChassisFeedback_Build(&chassis_feedback, &dji_feedback);
-        ArmFeedback_Build(&arm_feedback,
-                          &p1010b_feedback,
-                          &damiao_feedback,
-                          &go8010_feedback);
-
-        operational = RobotSafety_Evaluate(&input,
-                                           &sensor,
-                                           &chassis_feedback,
-                                           &arm_feedback);
-
-        RobotSystem_Step(&input,
-                         &sensor,
-                         &chassis_feedback,
-                         &arm_feedback,
-                         operational,
-                         &chassis_command,
-                         &arm_command);
-
-        if (!operational)
-        {
-            ChassisSystem_Reset();
-            ArmSystem_Reset();
-            ChassisCommand_Clear(&chassis_command);
-            ArmCommand_Clear(&arm_command);
-        }
-
-        DjiDriver_Send(&chassis_command);
-        P1010BDriver_Send(&arm_command);
-        DamiaoDriver_Send(&arm_command);
-        Go8010Driver_Send(&arm_command);
-
-        vTaskDelayUntil(&last_wake_tick, pdMS_TO_TICKS(1U));
-    }
-}
-```
-
-约束：
-
-- 每周期只复制一次输入、姿态和反馈，计算期间不再次读取可变全局量；
-- safety 失效时，同一周期复位相关控制器并通过每个厂商驱动提交安全命令；
-- system 函数不得阻塞、调用 `osDelay` 或自行维护另一个控制周期；
-- 驱动发送必须非阻塞，初始化/查询/恢复过程应拆成单步状态机；
-- 如果周期超时，先用 DWT 测量每段最坏执行时间，再决定优化或拆分，不能静默降低某个 system 的频率。
-
-## 7. APP 目标目录
+## 5. APP 文件基线
 
 ```text
 User/APP/
-├── Task/
-│   ├── robot_control_task.c
-│   ├── robot_control_task.h
-│   ├── input_task.c
-│   ├── input_task.h
-│   ├── ins_task.c
-│   ├── ins_task.h
-│   ├── service_task.c
-│   └── service_task.h
-│
-└── System/
-    ├── robot_system.c
-    ├── robot_system.h
-    ├── robot_safety.c
-    ├── robot_safety.h
-    ├── chassis_system.c
-    ├── chassis_system.h
-    ├── arm_system.c
-    └── arm_system.h
+├── input_task.c
+├── input_task.h
+├── chassis_task.c
+├── chassis_task.h
+├── arm_task.c
+├── arm_task.h
+├── ins_task.c
+├── ins_task.h
+├── rc_system.c
+└── rc_system.h
 ```
 
-类型放在真正拥有它们的头文件中：
+- `input_task` 是输入任务，`rc_system` 是 UART5 DBUS 协议和 DMA 生命周期所有者，二者不合并。
+- `chassis_task` 直接持有四个 M3508 实例和四个速度 PID。
+- `arm_task` 直接持有机器人装配的 Damiao 电机实例，不增加通用 `Motor_t` 或厂商联合体。
+- CAN1/CAN2 回调分别转发到 `ChassisTask_OnCan1Rx()` 和 `ArmTask_OnCan2Rx()`。
 
-- `InputSnapshot_t` 归 `input_task.h`；
-- `SensorSnapshot_t` 归 `ins_task.h`；
-- `ChassisFeedback_t`、`ChassisCommand_t` 归 `chassis_system.h`；
-- `ArmFeedback_t`、`ArmCommand_t` 归 `arm_system.h`。
+## 6. 安全语义
 
-不创建通用 `robot_control_types.h` 类型垃圾桶，也不为每个厂商在 APP 再包一层只转发调用的适配文件。
+以下任一条件失败时，控制任务必须发送对应的安全命令并继续运行：
 
-## 8. 并发与数据传递
+- 整车未解锁；
+- 遥控器未就绪；
+- 输入任务通知超时；
+- 当前参与闭环的电机反馈无效或超时；
+- PID 或控制计算失败；
+- CAN 发送入队失败时，不得等待队列，而是在后续周期继续处理。
 
-- RC 和 INS 各自发布最新快照；`RobotControlTask` 每周期复制一次。
-- FDCAN FIFO 中断循环取尽当前 FIFO 帧，交给对应 DJI、P1010B 或 Damiao 驱动接收入口；ISR 不进行机构控制计算。
-- USART10 DMA/空闲中断只提交本次收到的字节片段。GO8010 驱动负责缓存和帧头重同步，不假设一次 DMA 事件等于一整帧。
-- 驱动反馈若由 ISR 更新，任务侧使用短临界区、双缓冲或驱动已经提供的原子快照方法复制，不能在控制计算期间持锁。
-- 模式切换、回零开始等不可丢失的离散命令才进入事件队列；摇杆、姿态、速度和电机反馈不排队。
-- `ChassisSystem` 与 `ArmSystem` 不互相调用，也不直接访问对方内部状态；共享模式和互锁由 `RobotSystem` 协调。
+底盘失能时复位速度 PID、清零轮速目标并发送零电流。机械臂失能时逐个发送 Damiao 失能帧；当前每次任务运行最多发送一帧，并保存最近一次 CAN 入队返回值供调试观察。
 
-## 9. 安全语义
+## 7. 后续再实现顺序
 
-最小安全门控只使用已经存在且有真实消费者的条件：
-
-- 遥控器是否就绪；
-- INS 是否已发布有效且新鲜的姿态；
-- 当前参与闭环的执行器反馈是否有效且新鲜；
-- 对应厂商驱动是否完成必要初始化；
-- system 控制计算是否成功。
-
-任一条件失败时，本周期必须：
-
-1. 停止生成新的机构目标；
-2. 复位受影响的 PID 和跨周期控制状态；
-3. 通过各厂商驱动发送其协议定义的安全命令；
-4. 保持周期运行并等待输入/反馈恢复，不能永久阻塞在等待循环中。
-
-暂不预建复杂故障树和统一自动恢复框架。具体协议出现 late-power-on 等真实问题时，将恢复状态放在拥有该协议生命周期的驱动中，由 `RobotControlTask` 每周期推进一步。
-
-## 10. 分阶段再实现
-
-1. **文档与 CubeMX 任务基线**：固化四任务模型，将旧 `CHASSIS_TASK`、`rcTask` 重命名为 `robotControlTask`、`inputTask`，把 `defaultTask` 明确为 `serviceTask`，保持 CMSIS-RTOS2 和 1 kHz tick。
-2. **任务骨架与安全零输出**：建立 `RobotControlTask` 1 ms 绝对节拍，直接初始化现有厂商驱动，只读取反馈并持续发送安全命令；用 DWT 测量最坏执行时间，不接入 PID 和运动学。
-3. **CAN1 DJI 底盘闭环**：将麦轮运动学和 PID 重写为 `ChassisSystem`，完成遥控输入 → 轮速目标 → DJI 反馈 → 电流命令的第一条真实闭环。
-4. **逐协议接入**：依次接入 CAN1 P1010B、CAN2 Damiao、USART10 GO8010；每次只增加一条执行器链路并验证单位、反馈新鲜度、失能零输出和 1 ms 预算。
-5. **机械臂再实现**：将机构状态机、目标生成、运动学和补偿重写为 `ArmSystem`，由 `RobotSystem` 处理与底盘共享的模式和互锁。
-6. **输入与观测收口**：将旧 `rc_task` 的应用语义收敛到 `InputTask`，将 UART/DMA 细节留在 BSP/driver；控制链稳定后再由 `ServiceTask` 加入 VOFA、USB 和执行时间观测。
-7. **残留清理**：删除旧 `chassis_task`、旧任务入口、Stepper、云台、发射以及不再使用的工程登记，最后执行 EIDE 和 Keil 全量构建。
+1. 实机验证 `InputTask → ChassisTask/ArmTask` 通知、默认锁定和遥控失联门控。
+2. 验证 CAN1 四轮反馈、麦轮方向、原地自旋和速度 PID。
+3. 完成 `ArmTask` 的机构状态、目标生成、运动学和补偿。
+4. 接入 USART10 GO8010；两个 P1010B 后腿电机继续跳过。
+5. 控制链稳定后再加入 DWT 最坏执行时间、栈余量和 VOFA 观测。
 
 每一阶段都必须能够单独构建、烧录和回退；未通过当前阶段验证前不进入下一协议或机构。
 
-## 11. 明确不采用的结构
+## 8. 明确不采用
 
-- 不建立统一 `MotorIo` 或包含全部厂商字段的通用电机对象；
-- 不让算法对象永久绑定厂商驱动或直接发送总线；显式驱动接线只存在于 `RobotControlTask`；
-- 不照搬 `new_robot_code` 的通用电机注册表、字符串查找、厂商 union、DataPool/event bus 和 task 间 submit 网络；
-- 不设置独立 `mct`、`chassis_task`、`arm_task` 控制周期；除非后续有明确的执行时间或阻塞证据；
-- 不让 BSP 中断回调直接调用 APP/system；
-- 不为尚未接入的执行器、故障或平台预留空接口；
-- 不把 USB、VOFA 和日志放入 1 ms 控制任务。
-
-## 12. 参考设计
-
-- [ArduPilot Copter scheduler](https://github.com/ArduPilot/ardupilot/blob/master/ArduCopter/Copter.cpp)：同一调度器按确定顺序运行 INS、控制器和电机输出，并为低速功能声明频率与执行时间预算。
-- [ros2_control Controller Manager](https://control.ros.org/rolling/doc/ros2_control/controller_manager/doc/userdoc.html)：默认采用单周期 `read → update → write`，只有阻塞或超预算控制器才异步化。
-- [Betaflight task table](https://github.com/betaflight/betaflight/blob/master/src/main/fc/tasks.c)：按频率和优先级拆调度项，而不是按源码模块机械创建线程。
-- [PX4 multicopter rate control](https://github.com/PX4/PX4-Autopilot/blob/main/src/modules/mc_rate_control/MulticopterRateControl.cpp)：数据驱动的 WorkItem 适用于具有不同频率和独立数据源的复杂系统。
-- [RoboMaster standard robot FreeRTOS setup](https://github.com/RoboMaster/Development-Board-C-Examples/blob/master/20.standard_robot/Src/freertos.c)：底盘、云台和 INS 分任务是传统 RoboMaster 模式，适用于不同周期和独立机构，但不是本工程的默认选择。
+- 不恢复 `RobotControlTask`、`ChassisSystem` 或 `ArmSystem`；
+- 不建立统一 `MotorIo`、厂商 union、字符串查找或运行时电机注册表；
+- 不让 BSP 中断执行机构控制；
+- 不在控制任务中加入阻塞式等待、电机应答轮询或非必要延时；
+- 不把 USB、VOFA 和日志发送放入实时控制任务。
