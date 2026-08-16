@@ -1,151 +1,117 @@
 /**
  ******************************************************************************
  * @file    bsp_uart.c
- * @version V1.0.0
- * @date    2026.03.04
- * @brief   UART通信功能函数
- * @encoding UTF-8
- ******************************************************************************
- * @attention
- * * 注意初始化BSP_USART_Init函数
+ * @brief   UART 中断与 DMA 传输分发。
  ******************************************************************************
  */
 
-/* Includes ---------------------------------------------------------------- */
 #include "bsp_uart.h"
+
+#include "arm_task.h"
 #include "rc_system.h"
-#include "Unitree_Motor.h"
-/* Defines ----------------------------------------------------------------- */
+#include "usart.h"
 
-/* Global variable --------------------------------------------------------- */
+#include <stdbool.h>
 
-/* Static Fun -------------------------------------------------------------- */
-static void USART_RxDMA_MultiBuffer_Init(UART_HandleTypeDef *huart, uint32_t *DstAddress, uint32_t *SecondMemAddress, uint32_t DataLength);
-static void USER_USART2_RxHandler(UART_HandleTypeDef *huart,uint16_t Size);
+#define BSP_USART10_RX_ALIGN __attribute__((aligned(32)))
+#define BSP_USART10_RECOVERY_RETRY_MS 5U
 
-/* Functions --------------------------------------------------------------- */
-/**
- * @brief  BSP层USART初始化
- * @param  无
- * @return 无
- * @note   无
- */
-void BSP_USART_Init(void){
-	USART_RxDMA_MultiBuffer_Init(&huart2,  (uint32_t *)Unitree_MultiRx_Buf[0], (uint32_t *)Unitree_MultiRx_Buf[1], UNITREE_RX_BUF_LEN);
-}
+static uint8_t g_usart10_rx_buffer[UNITREE_RX_BUF_LEN]
+    BSP_USART10_RX_ALIGN;
+static volatile bool g_usart10_restart_pending = true;
+static uint32_t g_usart10_next_restart_time_ms = 0U;
 
-/* Private functions ------------------------------------------------------- */
-/**
-  * @brief  初始化多缓冲DMA传输并使能中断
-  * @param  huart: UART句柄指针
-  * @param  DstAddress: 目标内存缓冲区地址指针
-  * @param  SecondMemAddress: 第二个内存缓冲区地址指针（用于多缓冲传输）
-  * @param  DataLength: 要传输的数据长度
-  * @return 无
-  * @note   无
-  */
-static void USART_RxDMA_MultiBuffer_Init(UART_HandleTypeDef *huart, uint32_t *DstAddress, uint32_t *SecondMemAddress, uint32_t DataLength){
-	huart->ReceptionType = HAL_UART_RECEPTION_TOIDLE;
-	huart->RxXferSize    = DataLength * 2;
-
-	SET_BIT(huart->Instance->CR3,USART_CR3_DMAR); 	// 使能DMA接收
-	__HAL_UART_ENABLE_IT(huart, UART_IT_IDLE); 		// 使能空闲中断
-	/* 禁用DMA */
-	do{
-		__HAL_DMA_DISABLE(huart->hdmarx);
-	}while(((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->CR & DMA_SxCR_EN);
-	/* 配置DMA */ 
-	((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->PAR = (uint32_t)&huart->Instance->RDR;
-	((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->M0AR = (uint32_t)DstAddress;
-	((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->M1AR = (uint32_t)SecondMemAddress;
-	((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->NDTR = DataLength;
-	/* 使能双缓冲区模式 */ 
-	SET_BIT(((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->CR, DMA_SxCR_DBM);
-	/* 使能DMA */ 
-	__HAL_DMA_ENABLE(huart->hdmarx);	
-}
-
-/**
-  * @brief  用户USART2接收事件回调 (Unitree电机)
-  * @param  huart: UART句柄
-  * @param  Size: 接收缓冲区中可用数据的数量
-  * @return 无
-  * @note   无
-  */
-static void USER_USART2_RxHandler(UART_HandleTypeDef *huart,uint16_t Size){
-	/* 当前使用的内存缓冲区是内存0 */
-	if(((((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->CR) & DMA_SxCR_CT ) == RESET){
-		/* 禁用DMA */
-		__HAL_DMA_DISABLE(huart->hdmarx);
-		/* 切换内存0到内存1 */
-		((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->CR |= DMA_SxCR_CT;
-		/* 重置接收计数 */
-		__HAL_DMA_SET_COUNTER(huart->hdmarx,UNITREE_RX_BUF_LEN*2);
-		/* 判断大小是否等于接收数据的长度 */
-		if(Size == UNITREE_RX_BUF_LEN)
-		{
-			/* 内存0数据解包 */
-			Uintree_RxInfo_Unpack(Unitree_MultiRx_Buf[0],&Unitree_Rx_Info);
-		}
-	}
-	/* 当前使用的内存缓冲区是内存1 */
-	else{
-		/* 禁用DMA */
-		__HAL_DMA_DISABLE(huart->hdmarx);
-		/* 切换内存1到内存0 */
-		((DMA_Stream_TypeDef  *)huart->hdmarx->Instance)->CR &= ~(DMA_SxCR_CT);
-		/* 重置接收计数 */
-		__HAL_DMA_SET_COUNTER(huart->hdmarx,UNITREE_RX_BUF_LEN*2);
-		if(Size == UNITREE_RX_BUF_LEN)
-		{
-			/* 内存1数据解包 */
-			Uintree_RxInfo_Unpack(Unitree_MultiRx_Buf[1],&Unitree_Rx_Info);
-		}		
-	}
-	/* 使能DMA */
-	__HAL_DMA_ENABLE(huart->hdmarx);
-}
-
-/* Interrupt functions ----------------------------------------------------- */
-/**
-  * @brief  接收事件回调
-  * @param  huart: UART句柄
-  * @param  Size: 接收缓冲区中可用数据的数量
-  * @return 无
-  * @note   在高级接收服务使用后调用的Rx事件通知
-  */
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart,uint16_t Size)
+static HAL_StatusTypeDef bsp_usart10_start_receive(void)
 {
-	if(huart == &huart5)
-	{
-		RcSystem_UartRxEvent(huart,Size);
-	} 
-	else if(huart == &huart2)
-	{
-		USER_USART2_RxHandler(huart,Size);
-	}
+    HAL_StatusTypeDef result;
+
+    if ((huart10.RxState != HAL_UART_STATE_READY) ||
+        HAL_IS_BIT_SET(huart10.Instance->CR3, USART_CR3_DMAR))
+    {
+        if (HAL_UART_AbortReceive(&huart10) != HAL_OK)
+        {
+            return HAL_ERROR;
+        }
+    }
+
+    result = HAL_UARTEx_ReceiveToIdle_DMA(
+        &huart10,
+        g_usart10_rx_buffer,
+        sizeof(g_usart10_rx_buffer));
+    if (result == HAL_OK)
+    {
+        /* 固定 16 字节协议只处理整帧完成和 IDLE，不需要半传输回调。 */
+        __HAL_DMA_DISABLE_IT(huart10.hdmarx, DMA_IT_HT);
+        g_usart10_restart_pending = false;
+        g_usart10_next_restart_time_ms = 0U;
+    }
+
+    return result;
 }
 
-/**
-  * @brief  UART发送完成回调
-  * @param  huart: UART句柄
-  * @return 无
-  * @note   UART5事件由rc_task释放DbgDisp异步发送缓冲区
-  */
+void BSP_USART_Init(void)
+{
+    (void)bsp_usart10_start_receive();
+}
+
+void BSP_USART10_RecoverRxIfPending(void)
+{
+    uint32_t now_ms;
+
+    if (!g_usart10_restart_pending)
+    {
+        return;
+    }
+
+    now_ms = HAL_GetTick();
+    if ((int32_t)(now_ms - g_usart10_next_restart_time_ms) < 0)
+    {
+        return;
+    }
+
+    if (bsp_usart10_start_receive() != HAL_OK)
+    {
+        /* HAL/DMA 暂时忙时由 ArmTask 延后重试，禁止在任务内阻塞等待。 */
+        g_usart10_next_restart_time_ms =
+            now_ms + BSP_USART10_RECOVERY_RETRY_MS;
+    }
+}
+
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
+{
+    if (huart == &huart5)
+    {
+        RcSystem_UartRxEvent(huart, size);
+        return;
+    }
+
+    if (huart != &huart10)
+    {
+        return;
+    }
+
+    if (size == UNITREE_RX_BUF_LEN)
+    {
+        ArmTask_OnUsart10Rx(g_usart10_rx_buffer, size);
+    }
+    else if ((HAL_UARTEx_GetRxEventType(huart) == HAL_UART_RXEVENT_IDLE) &&
+             (size > 0U))
+    {
+        /* 从半帧启动时丢弃本段，在任务上下文重新对齐下一帧。 */
+        g_usart10_restart_pending = true;
+    }
+}
+
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-	RcSystem_UartTxComplete(huart);
+    RcSystem_UartTxComplete(huart);
 }
 
-/**
-  * @brief  UART错误回调
-  * @param  huart: UART句柄
-  * @return 无
-  * @note   UART5事件由rc_task请求在任务上下文恢复DMA接收
-  */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-	RcSystem_UartError(huart);
+    RcSystem_UartError(huart);
+    if (huart == &huart10)
+    {
+        g_usart10_restart_pending = true;
+    }
 }
-
-/* ------------------------------------------------------------------------- */

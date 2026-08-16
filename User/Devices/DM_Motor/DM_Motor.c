@@ -130,19 +130,17 @@ static float DM_UintToFloat(uint16_t x_int, float x_min, float x_max, uint8_t bi
  * @return 无
  * @note   从接收到的CAN数据中提取DM电机反馈信息，包括ID、状态、位置、速度、扭矩和温度
  */
-void DM_Motor_Info_Update(DM_Motor_Info_t *motor, uint8_t *rx_data,uint32_t data_len)
+void DM_Motor_Info_Update(DM_Motor_Info_t *motor, const uint8_t *rx_data,uint32_t data_len)
 { 
 	const struct DM_Motor_MitLimits *limits;
 
 	if((motor != NULL) && (rx_data != NULL) && (data_len == FDCAN_DLC_BYTES_8))
 	{
 	  motor->Data.id = (rx_data[0])&0x0F;
-	  motor->Data.state = (rx_data[0])>>4;
+	  motor->Data.state = (DM_Motor_State_e)(rx_data[0] >> 4);
 	  motor->Data.p_int=(rx_data[1]<<8)|rx_data[2];
 	  motor->Data.v_int=(rx_data[3]<<4)|(rx_data[4]>>4);
 	  motor->Data.t_int=((rx_data[4]&0xF)<<8)|rx_data[5];
-	  motor->feedback_valid = true;
-	  motor->last_feedback_time_ms = DWT_GetTimeMs();
 	  limits = DM_GetMitLimits(motor->Motor_Type);
 	  if(limits != NULL)
 	  {
@@ -161,6 +159,10 @@ void DM_Motor_Info_Update(DM_Motor_Info_t *motor, uint8_t *rx_data,uint32_t data
 	  }
 	  motor->Data.Tmos = (float)(rx_data[6]);
 	  motor->Data.Tcoil = (float)(rx_data[7]);
+	  /* 最后发布反馈证据，任务看到新序号时前面的数据已经全部更新。 */
+	  motor->last_feedback_time_ms = DWT_GetTimeMs();
+	  motor->feedback_valid = true;
+	  motor->feedback_sequence++;
 	}
 }
 

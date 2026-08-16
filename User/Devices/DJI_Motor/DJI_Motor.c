@@ -36,25 +36,51 @@ static float DJI_Motor_Encoder_To_Anglesum(DJI_Motor_Data_t *Data,float Torque_R
  */
 uint8_t DJI_Motor_ctrl(DJI_Motor_Info_t *DJI_Motor,hcan_t* hcan, uint16_t delay_time)
 {
-	uint8_t data[8];
-	uint8_t send_status;
-
-	data[0] = (uint8_t)((DJI_Motor[0].Data.SET_Current >> 8) & 0xFF);
-	data[1] = (uint8_t)(DJI_Motor[0].Data.SET_Current & 0xFF);
-	data[2] = (uint8_t)((DJI_Motor[1].Data.SET_Current >> 8) & 0xFF);
-	data[3] = (uint8_t)(DJI_Motor[1].Data.SET_Current & 0xFF);
-	data[4] = (uint8_t)((DJI_Motor[2].Data.SET_Current >> 8) & 0xFF);
-	data[5] = (uint8_t)(DJI_Motor[2].Data.SET_Current & 0xFF);
-	data[6] = (uint8_t)((DJI_Motor[3].Data.SET_Current >> 8) & 0xFF);
-	data[7] = (uint8_t)(DJI_Motor[3].Data.SET_Current & 0xFF);
-
-	send_status = canx_send_data(hcan, DJI_Motor[0].ID_Set.TxIdentifier, data, 8);
+	const int16_t current[4] = {
+		DJI_Motor[0].Data.SET_Current,
+		DJI_Motor[1].Data.SET_Current,
+		DJI_Motor[2].Data.SET_Current,
+		DJI_Motor[3].Data.SET_Current,
+	};
+	uint8_t send_status = DJI_Motor_SendGroupCurrent(
+		hcan,
+		DJI_Motor[0].ID_Set.TxIdentifier,
+		current);
 	
 	if(delay_time > 0U)
 	{
 		osDelay(delay_time);
 	}
 	return send_status;
+}
+
+/**
+ * @brief 发送一组四槽 DJI 电流指令。
+ * @param hcan CAN 句柄。
+ * @param tx_identifier DJI 控制组 ID。
+ * @param current 四个连续电机槽位的电流指令。
+ * @return 0 表示 CAN 入队成功，非零表示参数或 HAL 发送失败。
+ * @note 只负责 DJI 协议的大端打包，不等待邮箱或电机应答。
+ */
+uint8_t DJI_Motor_SendGroupCurrent(hcan_t *hcan,
+								   uint32_t tx_identifier,
+								   const int16_t current[4])
+{
+	uint8_t data[8];
+	uint32_t index;
+
+	if ((hcan == NULL) || (current == NULL))
+	{
+		return 1U;
+	}
+
+	for (index = 0U; index < 4U; index++)
+	{
+		data[index * 2U] = (uint8_t)(((uint16_t)current[index] >> 8U) & 0xFFU);
+		data[index * 2U + 1U] = (uint8_t)((uint16_t)current[index] & 0xFFU);
+	}
+
+	return canx_send_data(hcan, tx_identifier, data, sizeof(data));
 }
 
 /**

@@ -36,6 +36,9 @@
 #define Chassis_3508_Motor3_RxID		0x203
 #define Chassis_3508_Motor4_RxID		0x204
 #define Chassis_3508_Motor5_RxID		0x205
+/* GM6020 ID 5：反馈 ID = 0x204 + motor_id；电流控制使用 ID 5~7 组。 */
+#define DJI_GM6020_MOTOR5_RX_ID          0x209U
+#define DJI_GM6020_CURRENT_GROUP5_7_TX_ID 0x2FEU
 /* 3508减速比 */
 #define DJI_3508_Ratio 					19.0f
 /* 2006减速比 */
@@ -95,7 +98,7 @@ typedef struct{
 	DJI_Motor_ID_t ID_Set;	/*!< CAN传输信息 */
 	DJI_Motor_Data_t Data;	/*!< 电机设备信息 */
 	float wheel_T;					/*!< 车轮的输出扭矩，单位为N·m */
-	bool feedback_valid;			/*!< 已收到至少一帧合法反馈 */
+	bool feedback_valid;			/*!< 已收到过反馈的锁存位，不表示当前在线 */
 	uint32_t last_feedback_time_ms;	/*!< 最近合法反馈时间 */
 }DJI_Motor_Info_t;
 
@@ -103,6 +106,9 @@ typedef struct{
 
 /* Functions ---------------------------------------------------------------- */
 uint8_t DJI_Motor_ctrl(DJI_Motor_Info_t *DJI_Motor,hcan_t* hcan, uint16_t delay_time);
+uint8_t DJI_Motor_SendGroupCurrent(hcan_t *hcan,
+								   uint32_t tx_identifier,
+								   const int16_t current[4]);
 void DJI_Motor_Info_Update(DJI_Motor_Info_t *DJI_Motor,uint8_t *rx_data,uint32_t data_len);
 
 /* -------------------------------------------------------------------------- */
