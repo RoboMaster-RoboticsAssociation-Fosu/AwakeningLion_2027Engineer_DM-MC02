@@ -32,7 +32,7 @@
 #define CHASSIS_TASK_NOTIFY_MASK            \
     (CHASSIS_TASK_NOTIFY_ENABLED | CHASSIS_TASK_NOTIFY_DISABLED)
 
-static ChassisTask_t g_chassis = {
+ChassisTask_t g_chassis = {
     .wheel_motor = {
         [CHASSIS_WHEEL_RIGHT_FRONT] = {
             .Motor_Type = DJI_M3508,

@@ -36,6 +36,12 @@ typedef struct
     float wheel_speed_reference_rpm[CHASSIS_WHEEL_COUNT];
 } ChassisTask_t;
 
+/**
+ * @brief 底盘任务实例。
+ * @note ChassisTask 是唯一写入者；VofaSystem 仅用于读取调参量。
+ */
+extern ChassisTask_t g_chassis;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
