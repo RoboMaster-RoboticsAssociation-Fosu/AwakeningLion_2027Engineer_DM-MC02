@@ -140,6 +140,9 @@ virtualFolder:
         - path: User/APP/arm_task.c
         - path: User/APP/input_task.c
         - path: User/APP/rc_system.c
+        - path: User/APP/service_task.c
+        - path: User/APP/led_system.c
+        - path: User/APP/vofa_system.c
       folders: []
     - name: Protocol
       files:
@@ -153,6 +156,7 @@ virtualFolder:
         - path: User/Bsp/bsp_uart.c
         - path: User/Bsp/bsp_can.c
         - path: User/Bsp/bsp_usb.c
+        - path: User/Bsp/bsp_ws2812.c
       folders: []
     - name: Controller
       files:

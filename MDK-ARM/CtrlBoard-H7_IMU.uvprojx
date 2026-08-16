@@ -1795,6 +1795,21 @@
               <FileType>1</FileType>
               <FilePath>..\User\APP\rc_system.c</FilePath>
             </File>
+            <File>
+              <FileName>service_task.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\service_task.c</FilePath>
+            </File>
+            <File>
+              <FileName>led_system.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\led_system.c</FilePath>
+            </File>
+            <File>
+              <FileName>vofa_system.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\vofa_system.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1839,6 +1854,11 @@
               <FileName>bsp_usb.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\Bsp\bsp_usb.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_ws2812.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Bsp\bsp_ws2812.c</FilePath>
             </File>
           </Files>
         </Group>

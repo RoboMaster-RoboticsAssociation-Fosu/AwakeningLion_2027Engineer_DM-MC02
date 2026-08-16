@@ -117,6 +117,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART10_UART_Init();
   MX_UART7_Init();
+  MX_SPI6_Init();
   /* USER CODE BEGIN 2 */
   if (!DWT_Init(SystemCoreClock))
   {

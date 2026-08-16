@@ -30,6 +30,7 @@
 #include "chassis_task.h"
 #include "input_task.h"
 #include "ins_task.h"
+#include "service_task.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,7 +57,7 @@ osThreadId_t serviceTaskHandle;
 const osThreadAttr_t serviceTask_attributes = {
   .name = "serviceTask",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for INS_TASK */
 osThreadId_t INS_TASKHandle;
@@ -165,11 +166,9 @@ void StartServiceTask(void *argument)
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartServiceTask */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
+  (void)argument;
+  ServiceTask_Run();
+  osThreadExit();
   /* USER CODE END StartServiceTask */
 }
 
