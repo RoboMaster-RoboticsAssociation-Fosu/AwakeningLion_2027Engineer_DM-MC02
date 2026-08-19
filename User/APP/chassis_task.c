@@ -27,6 +27,8 @@
 /* Control timing and safety ------------------------------------------------ */
 #define CHASSIS_TASK_PERIOD_S               (0.001F)
 #define CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS   (50U)
+#define CHASSIS_MAX_LINEAR_SPEED_MPS        (1.0F)
+#define CHASSIS_MAX_ROTATION_SPEED_RAD_S    (2.0F)
 #define CHASSIS_TASK_NOTIFY_ENABLED         (1UL << 0U)
 #define CHASSIS_TASK_NOTIFY_DISABLED        (1UL << 1U)
 #define CHASSIS_TASK_NOTIFY_MASK            \
@@ -208,15 +210,14 @@ static bool chassis_read_remote_command(float *vx_mm_s,
                                         float *vy_mm_s,
                                         float *vw_deg_s)
 {
-    /* DBUS 满量程 660 对应底盘平移速度 4000 mm/s。 */
-    const float remote_speed_scale_mm_s_per_count = 6.060606F;
-    /*
-     * DM_MC02 参考工程用 ch[2] 产生 Yaw 指令，比例为
-     * 0.006 rad/s/count = 0.34377468 deg/s/count。参考工程的
-     * Yaw 以顺时针为正，底盘跟随角速度取反向，因此此处使用
-     * -ch[2] 作为底盘 vw。
-     */
-    const float remote_spin_scale_deg_s_per_count = 0.34377468F;
+    /* DBUS 满量程映射到可配置的底盘最大线速度。 */
+    const float remote_speed_scale_mm_s_per_count =
+        CHASSIS_MAX_LINEAR_SPEED_MPS * 1000.0F /
+        (float)RC_CH_VALUE_MAX;
+    /* DBUS 满量程映射到可配置的最大旋转角速度，内部单位为 deg/s。 */
+    const float remote_spin_scale_deg_s_per_count =
+        CHASSIS_MAX_ROTATION_SPEED_RAD_S * 57.2957795F /
+        (float)RC_CH_VALUE_MAX;
     int16_t channel_0;
     int16_t channel_1;
     int16_t channel_2;
