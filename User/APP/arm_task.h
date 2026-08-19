@@ -11,6 +11,8 @@
 #include "DM_Motor.h"
 #include "DJI_Motor.h"
 #include "Unitree_Motor.h"
+#include "arm_control_filter.h"
+#include "pid.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -48,11 +50,46 @@ typedef enum
     ARM_JOINT_COUNT
 } ArmJoint_e;
 
+/** @brief Mechanical-arm control mode selected by InputTask. */
+typedef enum
+{
+    ARM_CONTROL_MODE_PRESET = 1,
+    ARM_CONTROL_MODE_HOLD = 2,
+} ArmControlMode_e;
+
+/** @brief Preset action selected by a valid remote-control edge. */
+typedef enum
+{
+    ARM_PRESET_ACTION_NONE = 0,
+    ARM_PRESET_ACTION_NORMAL,
+    ARM_PRESET_ACTION_WAVE_1,
+    ARM_PRESET_ACTION_WAVE_2,
+    ARM_PRESET_ACTION_CUSTOM_1,
+} ArmPresetAction_e;
+
+/** @brief A complete mechanism pose in ArmJoint_e order, in rad. */
+typedef struct
+{
+    float joint_rad[ARM_JOINT_COUNT];
+} ArmPose_t;
+
+/**
+ * @brief InputTask command consumed by ArmTask.
+ * @note action_sequence increments for every valid preset trigger, including
+ *       repeatedly selecting the same action.
+ */
+typedef struct
+{
+    bool enabled;
+    ArmControlMode_e mode;
+    ArmPresetAction_e action;
+    uint32_t action_sequence;
+} ArmTaskCommand_t;
+
 /**
  * @brief 机械臂电机通信的当前可观测状态。
- * @note ONLINE/OFFLINE 用于存在连续反馈的电机；Damiao 尚未接入控制链时
- *       只能观测一次使能/失能命令是否被反馈确认，确认状态保持到下一次
- *       状态切换。
+ * @note Damiao 在使能/失能阶段保持命令确认状态；进入周期控制后，根据
+ *       一发一收反馈切换为 ONLINE/OFFLINE。
  */
 typedef enum
 {
@@ -108,7 +145,44 @@ typedef struct
     ArmDamiaoDebug_t damiao;
     uint8_t roll3_can_return_value;
     uint8_t pitch2_uart_return_value;
+    uint32_t can2_send_count;
+    uint32_t can2_send_failure_count;
 } ArmTaskDebug_t;
+
+/** @brief Local PID instances owned by ArmTask. */
+typedef struct
+{
+    PidController_t roll3_angle;
+    PidController_t roll3_speed;
+} ArmTaskPid_t;
+
+/** @brief Per-joint state for hand-guided pose holding. */
+typedef struct
+{
+    bool initialized;
+    bool moving[ARM_JOINT_COUNT];
+    uint32_t settle_start_time_ms[ARM_JOINT_COUNT];
+} ArmHoldState_t;
+
+/** @brief Cross-cycle state of the mechanical-arm control chain. */
+typedef struct
+{
+    ArmTaskCommand_t command;
+    ArmHoldState_t hold;
+    ArmFeedbackJumpFilter_t feedback_filter[ARM_JOINT_COUNT];
+    float desired_joint_target_rad[ARM_JOINT_COUNT];
+    float joint_target_rad[ARM_JOINT_COUNT];
+    uint32_t consumed_action_sequence;
+    uint32_t last_can2_send_time_ms;
+    uint32_t dm_first_control_time_ms[ARM_DAMIAO_MOTOR_COUNT];
+    uint32_t dm_control_feedback_sequence[ARM_DAMIAO_MOTOR_COUNT];
+    uint8_t dm_control_started_mask;
+    ArmControlMode_e previous_mode;
+    ArmPresetAction_e active_action;
+    bool can2_send_initialized;
+    bool target_initialized;
+    bool control_active;
+} ArmTaskControl_t;
 
 /**
  * @brief 机械臂任务实例。
@@ -119,8 +193,10 @@ typedef struct
     DM_Motor_Info_t damiao_motor[ARM_DAMIAO_MOTOR_COUNT];
     DJI_Motor_Info_t roll3_motor;
     Unitree_Motor_Info_t pitch2_motor;
+    ArmTaskPid_t pid;
     ArmJointFeedback_t joint_feedback[ARM_JOINT_COUNT];
     ArmMotorLinkState_e motor_link_state[ARM_JOINT_COUNT];
+    ArmTaskControl_t control;
     ArmTaskError_t error;
     volatile ArmTaskDebug_t debug;
 } ArmTask_t;
@@ -132,7 +208,17 @@ extern "C" {
 #endif
 
 /**
- * @brief 接收 CAN2 中断转发的 Damiao 与 roll3 GM6020 反馈帧。
+ * @brief 接收 CAN1 中断转发的 roll3 GM6020 反馈帧。
+ * @param identifier 经典 CAN 标准标识符。
+ * @param data 8 字节反馈数据。
+ * @param data_len HAL FDCAN DLC 编码。
+ */
+void ArmTask_OnCan1Rx(uint32_t identifier,
+                       uint8_t *data,
+                       uint32_t data_len);
+
+/**
+ * @brief 接收 CAN2 中断转发的 Damiao 反馈帧。
  * @param identifier 经典 CAN 标准标识符。
  * @param data 8 字节反馈数据。
  * @param data_len HAL FDCAN DLC 编码。
@@ -145,11 +231,11 @@ void ArmTask_OnCan2Rx(uint32_t identifier,
 void ArmTask_OnUsart10Rx(const uint8_t *data, uint16_t data_len);
 
 /**
- * @brief 发布本周期整车输出许可并唤醒机械臂任务。
- * @param enabled true 逐个使能电机；false 逐个失能电机。
+ * @brief 发布本周期控制命令并唤醒机械臂任务。
+ * @param command 输入任务生成的输出许可、模式和动作快照。
  * @note 仅在任务上下文调用；任务尚未启动时通知会被安全忽略。
  */
-void ArmTask_Notify(bool enabled);
+void ArmTask_Notify(const ArmTaskCommand_t *command);
 
 /**
  * @brief 运行机械臂控制任务生命周期。

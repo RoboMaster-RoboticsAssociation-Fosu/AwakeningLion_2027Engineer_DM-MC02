@@ -105,6 +105,8 @@ virtualFolder:
         - path: User/Algorithm/PID/pid.c
         - path: User/Algorithm/FIFO/FIFO.c
         - path: User/Algorithm/CRC/CRC.c
+        - path: User/Algorithm/Arm/arm_gravity_compensation.c
+        - path: User/Algorithm/Arm/arm_control_filter.c
       folders: []
     - name: DSP
       files:
@@ -210,6 +212,7 @@ targets:
         - User/Devices/Unitree_Motor
         - User/Algorithm/FIFO
         - User/Algorithm/CRC
+        - User/Algorithm/Arm
         - USB_DEVICE/App
         - USB_DEVICE/Target
         - Middlewares/ST/STM32_USB_Device_Library/Core/Inc

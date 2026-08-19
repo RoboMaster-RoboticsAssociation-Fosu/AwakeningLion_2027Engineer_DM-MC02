@@ -64,28 +64,28 @@ osThreadId_t INS_TASKHandle;
 const osThreadAttr_t INS_TASK_attributes = {
   .name = "INS_TASK",
   .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityRealtime,
+  .priority = (osPriority_t) osPriorityLow,
 };
 /* Definitions for inputTask */
 osThreadId_t inputTaskHandle;
 const osThreadAttr_t inputTask_attributes = {
   .name = "inputTask",
   .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityAboveNormal,
+  .priority = (osPriority_t) osPriorityRealtime,
 };
 /* Definitions for chassisTask */
 osThreadId_t chassisTaskHandle;
 const osThreadAttr_t chassisTask_attributes = {
   .name = "chassisTask",
-  .stack_size = 256 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityHigh,
 };
 /* Definitions for armTask */
 osThreadId_t armTaskHandle;
 const osThreadAttr_t armTask_attributes = {
   .name = "armTask",
-  .stack_size = 256 * 4,
-  .priority = (osPriority_t) osPriorityLow,
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -187,7 +187,8 @@ void INS_Task(void *argument)
   /* Infinite loop */
   for(;;)
   {
-    InsTask_Run();
+    //InsTask_Run();
+    osDelay(9999);
   }
   /* USER CODE END INS_Task */
 }
