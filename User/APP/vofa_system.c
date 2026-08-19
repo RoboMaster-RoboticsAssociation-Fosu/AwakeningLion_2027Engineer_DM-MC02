@@ -14,15 +14,25 @@
 #include "usart.h"
 #include "vofa.h"
 
-#define VOFA_SYSTEM_MAX_CHANNELS 12U
+#define VOFA_SYSTEM_MAX_CHANNELS 14U
 
 VofaSystem_t g_vofa_system = {
-    .requested_view = VOFA_VIEW_ARM_MOTOR_LINK_STATE,
-    .active_view = VOFA_VIEW_ARM_MOTOR_LINK_STATE,
-    .previous_view = VOFA_VIEW_ARM_MOTOR_LINK_STATE,
+    .requested_view = VOFA_VIEW_ARM_CONTROL_ANGLES,
+    .active_view = VOFA_VIEW_ARM_CONTROL_ANGLES,
+    .previous_view = VOFA_VIEW_ARM_CONTROL_ANGLES,
 };
 
 static float g_vofa_frame[VOFA_SYSTEM_MAX_CHANNELS];
+
+static const ArmJoint_e g_vofa_arm_control_joint_order[] = {
+    ARM_JOINT_BIG_YAW,
+    ARM_JOINT_PITCH1,
+    ARM_JOINT_PITCH2,
+    ARM_JOINT_ROLL2,
+    ARM_JOINT_PITCH3,
+    ARM_JOINT_ROLL3,
+    ARM_JOINT_GRIP,
+};
 
 /**
  * @brief 机械臂视图：8 路机构关节角，单位 rad。
@@ -58,6 +68,33 @@ static uint16_t vofa_system_fill_arm_motor_link_state(void)
     }
 
     return (uint16_t)ARM_JOINT_COUNT;
+}
+
+/**
+ * @brief Arm control view: calibrated feedback and applied target in rad.
+ * @note Channel pairs are big_yaw, pitch1, pitch2, roll2, pitch3, roll3,
+ *       grip. The uninstalled roll1 joint is intentionally omitted.
+ */
+static uint16_t vofa_system_fill_arm_control_angles(void)
+{
+    uint32_t index;
+
+    for (index = 0U;
+         index < (sizeof(g_vofa_arm_control_joint_order) /
+                  sizeof(g_vofa_arm_control_joint_order[0]));
+         index++)
+    {
+        ArmJoint_e joint = g_vofa_arm_control_joint_order[index];
+        uint32_t channel = index * 2U;
+
+        g_vofa_frame[channel] =
+            g_arm_task.joint_feedback[joint].angle_rad;
+        g_vofa_frame[channel + 1U] =
+            g_arm_task.control.joint_target_rad[joint];
+    }
+
+    return (uint16_t)(sizeof(g_vofa_arm_control_joint_order) /
+                      sizeof(g_vofa_arm_control_joint_order[0]) * 2U);
 }
 
 /**
@@ -166,6 +203,9 @@ void VofaSystem_Step(void)
             break;
         case VOFA_VIEW_ARM_MOTOR_LINK_STATE:
             channel_count = vofa_system_fill_arm_motor_link_state();
+            break;
+        case VOFA_VIEW_ARM_CONTROL_ANGLES:
+            channel_count = vofa_system_fill_arm_control_angles();
             break;
         case VOFA_VIEW_ARM_JOINT_ANGLES:
         default:
