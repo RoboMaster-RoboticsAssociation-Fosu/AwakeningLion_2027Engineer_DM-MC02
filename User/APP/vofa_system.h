@@ -1,67 +1,75 @@
 /**
  ******************************************************************************
  * @file    vofa_system.h
- * @brief   VOFA 调参视图选择与周期上传接口。
+ * @brief   自定义控制器固定VOFA观测接口。
  ******************************************************************************
  */
 
 #ifndef VOFA_SYSTEM_H
 #define VOFA_SYSTEM_H
 
-#include <stdbool.h>
-#include <stdint.h>
-
-/**
- * @brief 第一版 VOFA 调参视图。
- * @note 视图只改变上传通道的含义，不修改任何控制状态。
- */
+/** @brief 编译期可选的VOFA通道布局。 */
 typedef enum
 {
+    /**
+     * @brief 机械臂全部机构关节反馈角。
+     * @note I0..I7依次对应ArmJoint_e，单位均为rad；包含未安装的roll1槽位。
+     */
     VOFA_VIEW_ARM_JOINT_ANGLES = 0,
+
+    /**
+     * @brief 四个麦轮的速度闭环调试量。
+     * @note 每轮占3通道：目标rpm、反馈rpm、C620电流指令；轮序与
+     *       ChassisWheel_e一致，共12通道。
+     */
     VOFA_VIEW_CHASSIS_SPEED_PID,
+
+    /**
+     * @brief DBUS遥控器模拟量。
+     * @note I0..I3为CH0..CH3，I4为iw；均为减去中心值后的有符号量。
+     */
     VOFA_VIEW_REMOTE_INPUT,
+
+    /**
+     * @brief INS姿态、角速度和加速度。
+     * @note I0..I2为Roll/Pitch/Yaw(rad)，I3..I5为Gyro XYZ(rad/s)，
+     *       I6..I8为Accel XYZ(m/s^2)。
+     */
     VOFA_VIEW_INS_ATTITUDE,
+
+    /**
+     * @brief 机械臂全部关节的电机链路状态。
+     * @note I0..I7依次对应ArmJoint_e；0 UNKNOWN、1 ONLINE、2 OFFLINE、
+     *       3 DM_DISABLED_CONFIRMED、4 DM_ENABLED_CONFIRMED、
+     *       5 DM_COMMAND_FAILED。
+     */
     VOFA_VIEW_ARM_MOTOR_LINK_STATE,
+
+    /**
+     * @brief 已安装机械臂关节的反馈角与实际下发目标对比。
+     * @note 按big_yaw、pitch1、pitch2、roll2、pitch3、roll3、grip排列，
+     *       每轴占相邻2通道：反馈rad、目标rad，共14通道。
+     */
     VOFA_VIEW_ARM_CONTROL_ANGLES,
+
+    /**
+     * @brief 自定义控制器接收快照。
+     * @note I0为在线状态；I1..I6为big_yaw、pitch1、pitch2、roll2、
+     *       pitch3、roll3最终目标角(rad)；I7为按钮电平。
+     */
+    VOFA_VIEW_CUSTOM_CONTROLLER,
+
+    /** @brief 视图数量边界，仅用于完整性检查，不能作为有效布局。 */
     VOFA_VIEW_COUNT
 } VofaView_e;
-
-/**
- * @brief VOFA 视图选择与发送诊断状态。
- * @note 调试器可改写 requested_view 切换视图；其余字段只读。
- */
-typedef struct
-{
-    volatile VofaView_e requested_view;
-    VofaView_e active_view;
-    VofaView_e previous_view;
-    uint32_t last_send_status;
-    uint32_t busy_drop_count;
-    uint32_t send_error_count;
-} VofaSystem_t;
-
-extern VofaSystem_t g_vofa_system;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief 请求切换调参视图，由下一次 VofaSystem_Step() 生效。
- * @return true 表示视图有效且已接受请求。
- * @note 仅从任务上下文调用。
- */
-bool VofaSystem_SelectView(VofaView_e view);
-
-/**
- * @brief 请求返回上一个调参视图。
- * @note 仅从任务上下文调用。
- */
-void VofaSystem_ReturnView(void);
-
-/**
- * @brief 读取当前视图的任务内部量并通过 UART7 非阻塞上传。
- * @note 由 ServiceTask 每 10 ms 调用；UART 忙时丢弃本帧。
+ * @brief 按vofa_system.c中的VOFA_ACTIVE_VIEW上传一套固定通道。
+ * @note 由ServiceTask每10 ms调用；切换视图需改宏并重新编译。
  */
 void VofaSystem_Step(void);
 

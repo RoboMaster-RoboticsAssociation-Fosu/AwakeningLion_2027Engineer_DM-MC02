@@ -68,20 +68,20 @@ InputTask（1 ms）
 | CAN2 | Damiao 机械臂与 roll3 GM6020 | `ArmTask` | 经典 CAN，1 Mbit/s；按反馈 ID 分发 |
 | CAN3 | 保留 | 暂无业务发送所有者 | 保持启用 |
 | USART10 | GO8010 | 后续归 `ArmTask` | 4 Mbit/s，DMA 接收与非阻塞发送 |
-| UART7 | VOFA+ JustFloat | `VofaSystem` / `ServiceTask` | 115200 bit/s，中断发送，忙时丢弃本帧 |
+| UART7 | 自定义控制器接收 + VOFA JustFloat | `InputTask` / `ServiceTask` | 115200 bit/s，全双工；VOFA忙时丢弃本帧 |
 
-VOFA 第一版只保留直接调参量，不上传视图 ID、在线标志或统计值：
+VOFA不保存运行期视图状态或发送统计。需要切换时，手工修改
+`vofa_system.c`中的`VOFA_ACTIVE_VIEW`并重新编译：
 
-| 视图 | 值 | 通道顺序 |
-| --- | --- | --- |
-| `ARM_JOINT_ANGLES` | 0 | 8 个机构关节角，顺序与 `ArmJoint_e` 一致，单位 rad |
-| `CHASSIS_SPEED_PID` | 1 | 每个车轮的目标 rpm、反馈 rpm、C620 电流指令值依次相邻排列，车轮顺序与 `ChassisWheel_e` 一致 |
-| `REMOTE_INPUT` | 2 | CH0、CH1、CH2、CH3、iw |
-| `INS_ATTITUDE` | 3 | Roll、Pitch、Yaw、Gyro XYZ、Accel XYZ |
-
-默认为 `ARM_JOINT_ANGLES`。调试器可改写
-`g_vofa_system.requested_view` 请求切换；`active_view` 和
-`previous_view` 用于确认当前视图并返回上一视图。
+| 编译期视图 | 通道布局 |
+| --- | --- |
+| `ARM_JOINT_ANGLES` | I0..I7为全部机构关节反馈角，单位rad |
+| `CHASSIS_SPEED_PID` | 四轮各占目标rpm、反馈rpm、电流指令3通道 |
+| `REMOTE_INPUT` | CH0..CH3、iw |
+| `INS_ATTITUDE` | 姿态3通道、角速度3通道、加速度3通道 |
+| `ARM_MOTOR_LINK_STATE` | I0..I7为全部关节链路状态 |
+| `ARM_CONTROL_ANGLES` | 7个已安装关节各占反馈rad、目标rad 2通道 |
+| `CUSTOM_CONTROLLER` | online、六轴最终目标rad、按钮电平 |
 
 FDCAN/UART/DMA 中断只接收并更新对应任务拥有的反馈实例，不进行机构控制计算，也不发送新的控制目标。
 
