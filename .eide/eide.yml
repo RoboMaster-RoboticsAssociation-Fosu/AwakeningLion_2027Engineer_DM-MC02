@@ -142,6 +142,7 @@ virtualFolder:
         - path: User/APP/arm_task.c
         - path: User/APP/input_task.c
         - path: User/APP/rc_system.c
+        - path: User/APP/custom_controller_system.c
         - path: User/APP/service_task.c
         - path: User/APP/led_system.c
         - path: User/APP/vofa_system.c
@@ -150,6 +151,7 @@ virtualFolder:
       files:
         - path: User/Protocol/DbgDisp/DbgDisp.c
         - path: User/Protocol/VOFA/vofa.c
+        - path: User/Protocol/CustomController/custom_controller_protocol.c
       folders: []
     - name: bsp
       files:
@@ -221,6 +223,7 @@ targets:
         - User/Devices/PS2_Device
         - User/Protocol/DbgDisp
         - User/Protocol/VOFA
+        - User/Protocol/CustomController
         - User/Devices/HWT6033
         - .cmsis/include
         - MDK-ARM/RTE/_CtrlBoard-H7_IMU

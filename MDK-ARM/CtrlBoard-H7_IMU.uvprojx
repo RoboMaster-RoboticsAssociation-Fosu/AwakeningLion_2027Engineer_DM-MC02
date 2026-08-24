@@ -335,7 +335,7 @@
               <MiscControls>-Wno-ignored-attributes</MiscControls>
               <Define>USE_HAL_DRIVER,STM32H723xx,USE_PWR_LDO_SUPPLY</Define>
               <Undefine />
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;../User/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/Algorithm/EKF;../User/Algorithm/kalman;../User/Algorithm/mahony;../User/APP;../User/Bsp;../User/Devices/BMI088;../User/Devices/DM_Motor;../User/Algorithm/VMC;../User/Controller;../User/Lib;../User/Algorithm/PID;../User/Algorithm/filter;../User/Devices/Remote_Control;../User/Devices/Button;../User/Devices/DJI_Motor;../User/Config;../User/Devices/Unitree_Motor;../User/Algorithm/FIFO;../User/Algorithm/CRC;../User/Algorithm/Arm;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../User/Devices/PC_Comm;../User/Devices/PS2_Device;../User/Devices/HWT6033;../User/Protocol/DbgDisp;../User/Protocol/VOFA;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Drivers/CMSIS/RTOS2/Include</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;../User/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/Algorithm/EKF;../User/Algorithm/kalman;../User/Algorithm/mahony;../User/APP;../User/Bsp;../User/Devices/BMI088;../User/Devices/DM_Motor;../User/Algorithm/VMC;../User/Controller;../User/Lib;../User/Algorithm/PID;../User/Algorithm/filter;../User/Devices/Remote_Control;../User/Devices/Button;../User/Devices/DJI_Motor;../User/Config;../User/Devices/Unitree_Motor;../User/Algorithm/FIFO;../User/Algorithm/CRC;../User/Algorithm/Arm;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../User/Devices/PC_Comm;../User/Devices/PS2_Device;../User/Devices/HWT6033;../User/Protocol/DbgDisp;../User/Protocol/VOFA;../User/Protocol/CustomController;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Drivers/CMSIS/RTOS2/Include</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1806,6 +1806,11 @@
               <FilePath>..\User\APP\rc_system.c</FilePath>
             </File>
             <File>
+              <FileName>custom_controller_system.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\custom_controller_system.c</FilePath>
+            </File>
+            <File>
               <FileName>service_task.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\APP\service_task.c</FilePath>
@@ -1834,6 +1839,11 @@
               <FileName>vofa.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\Protocol\VOFA\vofa.c</FilePath>
+            </File>
+            <File>
+              <FileName>custom_controller_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Protocol\CustomController\custom_controller_protocol.c</FilePath>
             </File>
           </Files>
         </Group>

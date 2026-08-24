@@ -8,6 +8,7 @@
 #include "bsp_uart.h"
 
 #include "arm_task.h"
+#include "custom_controller_system.h"
 #include "rc_system.h"
 #include "usart.h"
 
@@ -52,6 +53,7 @@ static HAL_StatusTypeDef bsp_usart10_start_receive(void)
 void BSP_USART_Init(void)
 {
     (void)bsp_usart10_start_receive();
+    CustomControllerSystem_Init();
 }
 
 void BSP_USART10_RecoverRxIfPending(void)
@@ -85,6 +87,12 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
         return;
     }
 
+    if (huart == &huart7)
+    {
+        CustomControllerSystem_UartRxEvent(size);
+        return;
+    }
+
     if (huart != &huart10)
     {
         return;
@@ -110,6 +118,10 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     RcSystem_UartError(huart);
+    if (huart == &huart7)
+    {
+        CustomControllerSystem_UartError();
+    }
     if (huart == &huart10)
     {
         g_usart10_restart_pending = true;
