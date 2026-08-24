@@ -12,6 +12,8 @@
 #include "DJI_Motor.h"
 #include "Unitree_Motor.h"
 #include "arm_control_filter.h"
+#include "arm_custom_grip.h"
+#include "custom_controller_system.h"
 #include "pid.h"
 
 #include <stdbool.h>
@@ -55,6 +57,7 @@ typedef enum
 {
     ARM_CONTROL_MODE_PRESET = 1,
     ARM_CONTROL_MODE_HOLD = 2,
+    ARM_CONTROL_MODE_CUSTOM = 3,
 } ArmControlMode_e;
 
 /** @brief Preset action selected by a valid remote-control edge. */
@@ -81,9 +84,11 @@ typedef struct
 typedef struct
 {
     bool enabled;
+    bool freeze_targets;
     ArmControlMode_e mode;
     ArmPresetAction_e action;
     uint32_t action_sequence;
+    CustomControllerSnapshot_t custom_controller;
 } ArmTaskCommand_t;
 
 /**
@@ -164,11 +169,19 @@ typedef struct
     uint32_t settle_start_time_ms[ARM_JOINT_COUNT];
 } ArmHoldState_t;
 
+/** @brief 自定义模式夹爪按压方向和掉线重连状态。 */
+typedef struct
+{
+    bool initialized;
+    ArmCustomGripState_t grip;
+} ArmCustomControlState_t;
+
 /** @brief Cross-cycle state of the mechanical-arm control chain. */
 typedef struct
 {
     ArmTaskCommand_t command;
     ArmHoldState_t hold;
+    ArmCustomControlState_t custom;
     ArmFeedbackJumpFilter_t feedback_filter[ARM_JOINT_COUNT];
     float desired_joint_target_rad[ARM_JOINT_COUNT];
     float joint_target_rad[ARM_JOINT_COUNT];
@@ -181,6 +194,7 @@ typedef struct
     ArmPresetAction_e active_action;
     bool can2_send_initialized;
     bool target_initialized;
+    bool targets_frozen;
     bool control_active;
 } ArmTaskControl_t;
 

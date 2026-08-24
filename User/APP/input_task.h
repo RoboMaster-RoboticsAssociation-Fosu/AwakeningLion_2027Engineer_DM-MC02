@@ -15,7 +15,8 @@
 
 /**
  * @brief 输入任务跨周期状态。
- * @note locked 上电静态初始化为 true，只有 SW2 进入 UP/DOWN 的边沿改变它。
+ * @note locked 上电静态初始化为 true，只有 SW2 进入 UP/DOWN 的边沿改变它；
+ *       解锁后的RC掉线只关闭底盘，机械臂继续使能并冻结当前目标角。
  */
 typedef struct
 {

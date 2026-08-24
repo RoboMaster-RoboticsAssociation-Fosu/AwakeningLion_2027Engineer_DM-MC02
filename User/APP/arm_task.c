@@ -21,29 +21,45 @@
 #include <math.h>
 #include <stddef.h>
 
-#define ARM_TASK_NOTIFY_COMMAND         (1UL << 0U)
-#define ARM_PI_RAD                   3.14159265358979323846f
-#define ARM_TWO_PI_RAD               (2.0f * ARM_PI_RAD)
-#define ARM_DJI_ENCODER_COUNTS_PER_TURN 8192.0f
-#define ARM_TASK_PERIOD_S                0.001f
-#define ARM_JOINT_TARGET_STEP_RAD        0.0005f
-#define ARM_CAN2_SEND_PERIOD_MS          2U
-#define ARM_DJI_FEEDBACK_TIMEOUT_MS      50U
-#define ARM_UNITREE_FEEDBACK_TIMEOUT_MS  20U
-#define ARM_DAMIAO_CONTROL_TIMEOUT_MS    50U
-#define ARM_DAMIAO_RESPONSE_TIMEOUT_MS   10U
-#define ARM_DAMIAO_RETRY_INTERVAL_MS     50U
-#define ARM_DAMIAO_MAX_RETRIES           5U
-#define ARM_DAMIAO_MAX_ATTEMPTS          (1U + ARM_DAMIAO_MAX_RETRIES)
-#define ARM_HOLD_MOVING_THRESHOLD_RAD_S  0.08f
-#define ARM_HOLD_SETTLE_TIME_MS           50U
-#define ARM_FEEDBACK_JUMP_LIMIT_RAD       0.35f
-#define ARM_GRIP_CONTROL_SENSITIVITY      2.0f
-#define ARM_GRIP_TARGET_MIN_RAD           (-2.3f)
-#define ARM_GRIP_TARGET_MAX_RAD           0.6f
-#define ARM_PITCH2_TORQUE_MIN_NM          (-1.42f)
-#define ARM_PITCH2_TORQUE_MAX_NM          1.43f
-/* roll1 硬件尚未实装：保留实例和映射，但不得发送命令或触发失联故障。 */
+/* 任务通知与周期调度。 */
+#define ARM_TASK_NOTIFY_COMMAND           (1UL << 0U)
+#define ARM_TASK_PERIOD_S                 0.001f
+#define ARM_CAN2_SEND_PERIOD_MS           2U
+
+/* 角度换算与反馈安全。 */
+#define ARM_PI_RAD                        3.14159265358979323846f
+#define ARM_TWO_PI_RAD                    (2.0f * ARM_PI_RAD)
+#define ARM_DJI_ENCODER_COUNTS_PER_TURN  8192.0f
+#define ARM_FEEDBACK_JUMP_LIMIT_RAD        0.35f
+
+/* 电机反馈在线与达妙命令确认时序。 */
+#define ARM_DJI_FEEDBACK_TIMEOUT_MS       50U
+#define ARM_UNITREE_FEEDBACK_TIMEOUT_MS   20U
+#define ARM_DAMIAO_CONTROL_TIMEOUT_MS     50U
+#define ARM_DAMIAO_RESPONSE_TIMEOUT_MS    10U
+#define ARM_DAMIAO_RETRY_INTERVAL_MS      50U
+#define ARM_DAMIAO_MAX_RETRIES             5U
+#define ARM_DAMIAO_MAX_ATTEMPTS           (1U + ARM_DAMIAO_MAX_RETRIES)
+
+/* 各控制模式的目标斜坡与HOLD判定。 */
+#define ARM_JOINT_TARGET_STEP_RAD          0.0005f
+#define ARM_CUSTOM_JOINT_TARGET_STEP_RAD   0.0005f
+#define ARM_HOLD_MOVING_THRESHOLD_RAD_S    0.08f
+#define ARM_HOLD_SETTLE_TIME_MS            50U
+
+/* 关节机构角限位及夹爪增量控制。 */
+#define ARM_PITCH1_TARGET_MIN_RAD          0.0f
+#define ARM_GRIP_CONTROL_SENSITIVITY       2.0f
+#define ARM_CUSTOM_GRIP_TARGET_STEP_RAD   \
+    (ARM_JOINT_TARGET_STEP_RAD * ARM_GRIP_CONTROL_SENSITIVITY)
+#define ARM_GRIP_TARGET_MIN_RAD            (-2.3f)
+#define ARM_GRIP_TARGET_MAX_RAD            0.6f
+
+/* 执行器输出边界。 */
+#define ARM_PITCH2_TORQUE_MIN_NM           (-1.42f)
+#define ARM_PITCH2_TORQUE_MAX_NM           1.43f
+
+/* 硬件装配边界：roll1保留实例和映射，但当前不参与控制或失联判定。 */
 #define ARM_DAMIAO_INSTALLED_MASK                                      \
     (((1UL << ARM_DAMIAO_MOTOR_COUNT) - 1UL) &                         \
      ~(1UL << ARM_DAMIAO_ROLL1))
@@ -79,6 +95,17 @@ static const ArmJointMapping_t g_arm_joint_mapping[ARM_JOINT_COUNT] = {
     [ARM_JOINT_GRIP] = {1.0f, 1.8f, false},
 };
 
+/** 自定义控制器线上六轴按最终机构关节目标顺序直接映射。 */
+static const ArmJoint_e
+    g_arm_custom_joint_map[CUSTOM_CONTROLLER_JOINT_COUNT] = {
+        [CUSTOM_CONTROLLER_JOINT_BIG_YAW] = ARM_JOINT_BIG_YAW,
+        [CUSTOM_CONTROLLER_JOINT_PITCH1] = ARM_JOINT_PITCH1,
+        [CUSTOM_CONTROLLER_JOINT_PITCH2] = ARM_JOINT_PITCH2,
+        [CUSTOM_CONTROLLER_JOINT_ROLL2] = ARM_JOINT_ROLL2,
+        [CUSTOM_CONTROLLER_JOINT_PITCH3] = ARM_JOINT_PITCH3,
+        [CUSTOM_CONTROLLER_JOINT_ROLL3] = ARM_JOINT_ROLL3,
+    };
+
 /** Motor-side position gains and fixed joint-space target steps. */
 static const ArmJointControlConfig_t
     g_arm_joint_control_config[ARM_JOINT_COUNT] = {
@@ -100,7 +127,9 @@ static const ArmJointControlConfig_t
  * - SW1=MID plus an iw edge selects CUSTOM_1.
  * - SW1=UP plus iw entering the upper region selects WAVE_1.
  * - SW1=UP plus iw entering the lower region selects WAVE_2.
- * - SW2=MID does not trigger a preset; the HOLD entry remains disabled.
+ * - SW2=MID and SW1=UP plus any iw edge enters HOLD mode.
+ * - SW2=MID and SW1=MID plus any iw edge enters CUSTOM mode.
+ * - CUSTOM/HOLD plus SW2 moving to UP enters PRESET and selects NORMAL.
  */
 static const ArmPose_t g_arm_pose_normal = {
     .joint_rad = {
@@ -827,6 +856,17 @@ static float arm_task_clamp_float(float value, float minimum, float maximum)
     return value;
 }
 
+static float arm_task_limit_joint_target(ArmJoint_e joint,
+                                         float target_rad)
+{
+    if ((joint == ARM_JOINT_PITCH1) &&
+        (target_rad < ARM_PITCH1_TARGET_MIN_RAD))
+    {
+        return ARM_PITCH1_TARGET_MIN_RAD;
+    }
+    return target_rad;
+}
+
 static bool arm_task_joint_is_installed(ArmJoint_e joint)
 {
     return (joint < ARM_JOINT_COUNT) &&
@@ -877,6 +917,73 @@ static void arm_task_capture_joint_targets(void)
         }
     }
     g_arm_task.control.target_initialized = true;
+}
+
+static void arm_task_reset_custom_control_state(void)
+{
+    ArmCustomControlState_t *custom = &g_arm_task.control.custom;
+
+    custom->initialized = false;
+    ArmCustomGrip_Reset(&custom->grip);
+}
+
+static void arm_task_update_custom_targets(
+    const ArmTaskCommand_t *command)
+{
+    ArmCustomControlState_t *custom = &g_arm_task.control.custom;
+    const CustomControllerSnapshot_t *input =
+        &command->custom_controller;
+    uint32_t input_joint;
+
+    if (!custom->initialized)
+    {
+        if (!g_arm_task.control.target_initialized)
+        {
+            arm_task_capture_joint_targets();
+        }
+        custom->initialized = true;
+    }
+
+    if (!input->online)
+    {
+        uint32_t joint;
+
+        /* 离线进入或运行中掉线都立即保持各轴当前已应用目标。 */
+        for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+        {
+            if (arm_task_joint_is_installed((ArmJoint_e)joint))
+            {
+                g_arm_task.control.desired_joint_target_rad[joint] =
+                    g_arm_task.control.joint_target_rad[joint];
+            }
+        }
+    }
+    else
+    {
+        for (input_joint = 0U;
+             input_joint < CUSTOM_CONTROLLER_JOINT_COUNT;
+             input_joint++)
+        {
+            ArmJoint_e joint = g_arm_custom_joint_map[input_joint];
+
+            if (arm_task_joint_is_installed(joint))
+            {
+                g_arm_task.control.desired_joint_target_rad[joint] =
+                    input->joint_target_rad[input_joint];
+            }
+        }
+    }
+
+    (void)ArmCustomGrip_Update(
+        &custom->grip,
+        input->online,
+        input->button_pressed,
+        g_arm_task.control.joint_target_rad[ARM_JOINT_GRIP],
+        g_arm_task.control.desired_joint_target_rad[ARM_JOINT_GRIP],
+        ARM_CUSTOM_GRIP_TARGET_STEP_RAD,
+        ARM_GRIP_TARGET_MIN_RAD,
+        ARM_GRIP_TARGET_MAX_RAD,
+        &g_arm_task.control.desired_joint_target_rad[ARM_JOINT_GRIP]);
 }
 
 static const ArmPose_t *arm_task_get_preset_pose(ArmPresetAction_e action)
@@ -1005,7 +1112,7 @@ static void arm_task_update_hold_targets(uint32_t now_ms)
     }
 }
 
-static void arm_task_update_target_ramps(void)
+static void arm_task_update_target_ramps(ArmControlMode_e mode)
 {
     uint32_t joint;
 
@@ -1016,7 +1123,13 @@ static void arm_task_update_target_ramps(void)
             continue;
         }
 
-        if (joint == ARM_JOINT_GRIP)
+        g_arm_task.control.desired_joint_target_rad[joint] =
+            arm_task_limit_joint_target(
+                (ArmJoint_e)joint,
+                g_arm_task.control.desired_joint_target_rad[joint]);
+
+        if ((joint == ARM_JOINT_GRIP) &&
+            (mode != ARM_CONTROL_MODE_CUSTOM))
         {
             /* 夹爪已经通过遥控灵敏度限幅，不再叠加关节斜坡。 */
             g_arm_task.control.joint_target_rad[joint] =
@@ -1026,11 +1139,21 @@ static void arm_task_update_target_ramps(void)
 
         float ramped_target_rad =
             g_arm_task.control.joint_target_rad[joint];
+        float maximum_step_rad =
+            (mode == ARM_CONTROL_MODE_CUSTOM)
+                ? ARM_CUSTOM_JOINT_TARGET_STEP_RAD
+                : g_arm_joint_control_config[joint].max_step_rad;
+
+        if ((mode == ARM_CONTROL_MODE_CUSTOM) &&
+            (joint == ARM_JOINT_GRIP))
+        {
+            maximum_step_rad = ARM_CUSTOM_GRIP_TARGET_STEP_RAD;
+        }
 
         if (ArmControlFilter_SlewAngle(
                 g_arm_task.control.joint_target_rad[joint],
                 g_arm_task.control.desired_joint_target_rad[joint],
-                g_arm_joint_control_config[joint].max_step_rad,
+                maximum_step_rad,
                 joint == ARM_JOINT_ROLL3,
                 &ramped_target_rad))
         {
@@ -1044,10 +1167,48 @@ static void arm_task_update_control_targets(
     const ArmTaskCommand_t *command,
     uint32_t now_ms)
 {
+    if (command->freeze_targets)
+    {
+        if (!g_arm_task.control.targets_frozen)
+        {
+            uint32_t joint;
+
+            if (!g_arm_task.control.target_initialized)
+            {
+                arm_task_capture_joint_targets();
+            }
+            /* 冻结当前已应用目标，不跟随反馈，也不进入手扶HOLD逻辑。 */
+            for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+            {
+                if (arm_task_joint_is_installed((ArmJoint_e)joint))
+                {
+                    g_arm_task.control.desired_joint_target_rad[joint] =
+                        g_arm_task.control.joint_target_rad[joint];
+                }
+            }
+            g_arm_task.control.hold.initialized = false;
+            g_arm_task.control.targets_frozen = true;
+        }
+        g_arm_task.control.desired_joint_target_rad[ARM_JOINT_PITCH1] =
+            arm_task_limit_joint_target(
+                ARM_JOINT_PITCH1,
+                g_arm_task.control
+                    .desired_joint_target_rad[ARM_JOINT_PITCH1]);
+        arm_task_update_target_ramps(command->mode);
+        return;
+    }
+
+    if (g_arm_task.control.targets_frozen)
+    {
+        g_arm_task.control.targets_frozen = false;
+        g_arm_task.control.hold.initialized = false;
+    }
+
     if (command->mode != g_arm_task.control.previous_mode)
     {
         g_arm_task.control.previous_mode = command->mode;
         g_arm_task.control.hold.initialized = false;
+        arm_task_reset_custom_control_state();
         if (command->mode == ARM_CONTROL_MODE_PRESET)
         {
             /* Entering PRESET never replays the previously selected action. */
@@ -1058,6 +1219,11 @@ static void arm_task_update_control_targets(
     if (command->mode == ARM_CONTROL_MODE_HOLD)
     {
         arm_task_update_hold_targets(now_ms);
+    }
+    else if (command->mode == ARM_CONTROL_MODE_CUSTOM)
+    {
+        g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
+        arm_task_update_custom_targets(command);
     }
     else
     {
@@ -1071,9 +1237,10 @@ static void arm_task_update_control_targets(
     }
 
     if ((command->mode == ARM_CONTROL_MODE_HOLD) ||
+        (command->mode == ARM_CONTROL_MODE_CUSTOM) ||
         (g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE))
     {
-        arm_task_update_target_ramps();
+        arm_task_update_target_ramps(command->mode);
     }
 }
 
@@ -1089,6 +1256,8 @@ static bool arm_task_joint_to_motor_target(ArmJoint_e joint,
     }
 
     mapping = &g_arm_joint_mapping[joint];
+    joint_target_rad = arm_task_limit_joint_target(joint,
+                                                    joint_target_rad);
     *motor_target_rad =
         mapping->direction * (joint_target_rad + mapping->zero_rad);
     if (joint == ARM_JOINT_PITCH2)
@@ -1251,15 +1420,13 @@ static float arm_task_damiao_torque_feedforward(
     }
 }
 
-static void arm_task_send_can2_control(bool enabled,
-                                        bool control_allowed,
+static void arm_task_send_can2_control(bool control_allowed,
+                                        bool target_control_active,
                                         const ArmGravityOutput_t *gravity,
                                         int16_t roll3_current,
                                         uint32_t now_ms)
 {
     int16_t roll3_group_current[4] = {0, 0, 0, 0};
-    bool preset_action_active =
-        g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE;
     uint32_t index;
 
     if (g_arm_task.control.can2_send_initialized &&
@@ -1294,7 +1461,7 @@ static void arm_task_send_can2_control(bool enabled,
         }
 
         /* DOWN/失能状态也发送零控制 MIT 观测帧，维持达妙一发一收。 */
-        if (control_allowed && preset_action_active)
+        if (control_allowed && target_control_active)
         {
             (void)arm_task_joint_to_motor_target(
                 joint,
@@ -1313,9 +1480,9 @@ static void arm_task_send_can2_control(bool enabled,
         }
 
         /*
-         * 无动作时发送零控制 MIT 观测帧，维持达妙一发一收：
+         * 无有效位置目标时发送零控制 MIT 观测帧，维持达妙一发一收：
          * 位置、速度、Kp、Kd 和 torque_ff 均为 0，不使用预设目标。
-         * 有效动作触发后，上方逻辑才装载正式位置控制参数。
+         * PRESET动作、HOLD、CUSTOM或掉线冻结有效时才装载位置参数。
          */
         send_result = DM_Motor_Ctrl(
             &hfdcan2,
@@ -1333,7 +1500,7 @@ static void arm_task_send_can2_control(bool enabled,
         }
     }
 
-    if (enabled && control_allowed && !preset_action_active)
+    if (control_allowed && !target_control_active)
     {
         /* GM6020 持续上报反馈，不需要用发送帧维持观测。 */
         return;
@@ -1350,18 +1517,16 @@ static void arm_task_send_can2_control(bool enabled,
 }
 
 static void arm_task_send_pitch2_control(
-    bool enabled,
     bool control_allowed,
+    bool target_control_active,
     const ArmGravityOutput_t *gravity)
 {
     float motor_target_rad = 0.0f;
     float kp = 0.0f;
     float kd = 0.0f;
     float torque_ff = 0.0f;
-    bool preset_action_active =
-        g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE;
 
-    if (control_allowed && preset_action_active)
+    if (control_allowed && target_control_active)
     {
         (void)arm_task_joint_to_motor_target(
             ARM_JOINT_PITCH2,
@@ -1374,7 +1539,7 @@ static void arm_task_send_pitch2_control(
 
     Unitree_Motor_Cmd(
         &g_arm_task.pitch2_motor,
-        (enabled && control_allowed && preset_action_active)
+        (control_allowed && target_control_active)
             ? UNITREE_MODE_FOC
             : UNITREE_MODE_LOCK,
         torque_ff,
@@ -1395,7 +1560,9 @@ static void arm_task_deactivate_control(const ArmTaskCommand_t *command)
     }
     g_arm_task.control.control_active = false;
     g_arm_task.control.target_initialized = false;
+    g_arm_task.control.targets_frozen = false;
     g_arm_task.control.hold.initialized = false;
+    arm_task_reset_custom_control_state();
     g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
     g_arm_task.control.previous_mode = command->mode;
     g_arm_task.control.consumed_action_sequence =
@@ -1408,6 +1575,7 @@ static void arm_task_step(void)
     uint32_t now_ms = DWT_GetTimeMs();
     ArmGravityOutput_t gravity = {0};
     bool control_allowed;
+    bool target_control_active;
     int16_t roll3_current = 0;
 
     BSP_USART10_RecoverRxIfPending();
@@ -1427,7 +1595,9 @@ static void arm_task_step(void)
             (void)pid_reset(&g_arm_task.pid.roll3_angle);
             (void)pid_reset(&g_arm_task.pid.roll3_speed);
             g_arm_task.control.target_initialized = false;
+            g_arm_task.control.targets_frozen = false;
             g_arm_task.control.hold.initialized = false;
+            arm_task_reset_custom_control_state();
             g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
             g_arm_task.control.control_active = true;
         }
@@ -1441,13 +1611,19 @@ static void arm_task_step(void)
         arm_task_deactivate_control(command);
     }
 
+    target_control_active =
+        command->freeze_targets ||
+        (command->mode == ARM_CONTROL_MODE_HOLD) ||
+        (command->mode == ARM_CONTROL_MODE_CUSTOM) ||
+        (g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE);
+
     arm_task_send_pitch2_control(
-        command->enabled,
         control_allowed,
+        target_control_active,
         &gravity);
     arm_task_send_can2_control(
-        command->enabled,
         control_allowed,
+        target_control_active,
         &gravity,
         roll3_current,
         now_ms);
@@ -1461,7 +1637,8 @@ void ArmTask_Notify(const ArmTaskCommand_t *command)
 {
     if ((command == NULL) || (g_arm_task_thread == NULL) ||
         ((command->mode != ARM_CONTROL_MODE_PRESET) &&
-         (command->mode != ARM_CONTROL_MODE_HOLD)) ||
+         (command->mode != ARM_CONTROL_MODE_HOLD) &&
+         (command->mode != ARM_CONTROL_MODE_CUSTOM)) ||
         (command->action > ARM_PRESET_ACTION_CUSTOM_1))
     {
         return;

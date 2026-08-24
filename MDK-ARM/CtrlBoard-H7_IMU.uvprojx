@@ -1177,6 +1177,11 @@
               <FileType>1</FileType>
               <FilePath>..\User\Algorithm\Arm\arm_control_filter.c</FilePath>
             </File>
+            <File>
+              <FileName>arm_custom_grip.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Algorithm\Arm\arm_custom_grip.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

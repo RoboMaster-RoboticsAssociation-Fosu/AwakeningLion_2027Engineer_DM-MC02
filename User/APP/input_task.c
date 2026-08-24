@@ -10,6 +10,7 @@
 #include "arm_task.h"
 #include "chassis_task.h"
 #include "cmsis_os2.h"
+#include "custom_controller_system.h"
 #include "rc_system.h"
 
 static InputTask_t g_input_task = {
@@ -28,15 +29,26 @@ static void input_task_update_arm_command(void)
     bool enter_up = (iw_edges & RC_IW_EDGE_ENTER_UP) != 0U;
     bool enter_down = (iw_edges & RC_IW_EDGE_ENTER_DOWN) != 0U;
 
+    if ((sw2 == RC_SW_MID) &&
+        (sw1 == RC_SW_UP) &&
+        (iw_edges != RC_IW_EDGE_NONE))
+    {
+        g_input_task.arm_command.mode = ARM_CONTROL_MODE_HOLD;
+        return;
+    }
+
+    if ((sw2 == RC_SW_MID) &&
+        (sw1 == RC_SW_MID) &&
+        (iw_edges != RC_IW_EDGE_NONE))
+    {
+        g_input_task.arm_command.mode = ARM_CONTROL_MODE_CUSTOM;
+        return;
+    }
+
     if (sw2 == RC_SW_UP)
     {
         g_input_task.arm_command.mode = ARM_CONTROL_MODE_PRESET;
     }
-    /* HOLD 暂不启用，保留原入口，仅注释掉模式切换。 */
-    /* else if (sw2 == RC_SW_MID)
-    {
-        g_input_task.arm_command.mode = ARM_CONTROL_MODE_HOLD;
-    } */
 
     if ((sw2 != RC_SW_UP) ||
         (!enter_up && !enter_down))
@@ -95,9 +107,14 @@ void InputTask_Run(void)
     for (;;)
     {
         uint32_t sw2_edges;
-        bool output_enabled;
+        bool rc_ready;
+        bool chassis_enabled;
+        bool mode_exit_to_normal = false;
 
         RcSystem_Process();
+        CustomControllerSystem_Process();
+        CustomControllerSystem_CopySnapshot(
+            &g_input_task.arm_command.custom_controller);
         Remote_EdgeCursor_Poll(&g_input_task.remote_edge_cursor);
         sw2_edges = g_input_task.remote_edge_cursor
                         .switch_edges[REMOTE_SWITCH_SW2];
@@ -105,8 +122,21 @@ void InputTask_Run(void)
         if (RC_SWITCH_MOVED_TO_UP(sw2_edges))
         {
             g_input_task.locked = false;
-            /* 每次重新进入 PRESET 时先清除上一次已执行的动作。 */
-            g_input_task.arm_command.action = ARM_PRESET_ACTION_NONE;
+            mode_exit_to_normal =
+                (g_input_task.arm_command.mode == ARM_CONTROL_MODE_CUSTOM) ||
+                (g_input_task.arm_command.mode == ARM_CONTROL_MODE_HOLD);
+            if (mode_exit_to_normal)
+            {
+                /* CUSTOM/HOLD退出时进入动作模式并执行normal姿态。 */
+                g_input_task.arm_command.mode = ARM_CONTROL_MODE_PRESET;
+                g_input_task.arm_command.action =
+                    ARM_PRESET_ACTION_NORMAL;
+            }
+            else
+            {
+                /* 普通解锁不自动执行任何预设动作。 */
+                g_input_task.arm_command.action = ARM_PRESET_ACTION_NONE;
+            }
             g_input_task.arm_command.action_sequence++;
         }
         if (RC_SWITCH_MOVED_TO_DOWN(sw2_edges))
@@ -115,22 +145,31 @@ void InputTask_Run(void)
             g_input_task.locked = true;
         }
 
-        input_task_update_arm_command();
+        rc_ready = RcSystem_IsReady() != 0U;
+        if (rc_ready && !mode_exit_to_normal)
+        {
+            input_task_update_arm_command();
+        }
         if (g_input_task.locked)
         {
             g_input_task.arm_command.enabled = false;
+            g_input_task.arm_command.freeze_targets = false;
+            chassis_enabled = false;
         }
-        else if (RcSystem_IsReady() != 0U)
+        else if (rc_ready)
         {
             g_input_task.arm_command.enabled = true;
+            g_input_task.arm_command.freeze_targets = false;
+            chassis_enabled = true;
         }
         else
         {
-            g_input_task.arm_command.enabled = false;
+            /* RC掉线只停止底盘；机械臂继续使能并冻结当前已应用角度。 */
+            g_input_task.arm_command.enabled = true;
+            g_input_task.arm_command.freeze_targets = true;
+            chassis_enabled = false;
         }
-        output_enabled = g_input_task.arm_command.enabled;
-        g_input_task.arm_command.enabled = output_enabled;
-        ChassisTask_Notify(output_enabled);
+        ChassisTask_Notify(chassis_enabled);
         ArmTask_Notify(&g_input_task.arm_command);
         osDelay(1U);
     }

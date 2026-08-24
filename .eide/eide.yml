@@ -107,6 +107,7 @@ virtualFolder:
         - path: User/Algorithm/CRC/CRC.c
         - path: User/Algorithm/Arm/arm_gravity_compensation.c
         - path: User/Algorithm/Arm/arm_control_filter.c
+        - path: User/Algorithm/Arm/arm_custom_grip.c
       folders: []
     - name: DSP
       files:
