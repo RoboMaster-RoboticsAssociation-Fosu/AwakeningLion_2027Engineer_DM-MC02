@@ -22,7 +22,6 @@ typedef struct
     RC_EdgeCursor_t remote_edge_cursor;
     ArmTaskCommand_t arm_command;
     bool locked;
-    uint32_t rc_not_ready_cycles;
 } InputTask_t;
 
 #ifdef __cplusplus

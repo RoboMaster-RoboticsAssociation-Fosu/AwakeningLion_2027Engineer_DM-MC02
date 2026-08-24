@@ -105,8 +105,8 @@ DbgRet RcSystem_DebugSendArgs(const char *name, double value, ...);
     RcSystem_DebugSendArgs(__VA_ARGS__, (const char *)NULL)
 
 /**
- * @brief 查询是否已接收到有效且未超时的 DBUS 帧
- * @return 非零表示遥控数据可用
+ * @brief 查询遥控器是否允许继续维持控制输出
+ * @return 当前帧有效，或处于短暂接收异常宽限期时返回非零
  */
 uint8_t RcSystem_IsReady(void);
 

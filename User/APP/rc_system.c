@@ -28,6 +28,7 @@
 #define RC_DBUS_CHANNEL_MIN       364U
 #define RC_DBUS_CHANNEL_MAX       1684U
 #define RC_OFFLINE_TIMEOUT_MS     200U
+#define RC_NOT_READY_GRACE_MS      50U
 #define RC_IW_UP_THRESHOLD        (-330)
 #define RC_IW_DOWN_THRESHOLD      330
 
@@ -57,6 +58,9 @@ static RcSystem_t g_rc_system RC_DMA_BUFFER_ALIGN = {
         .restart_pending = 1U,
     },
 };
+
+static uint32_t g_rc_not_ready_since_ms = 0U;
+static uint8_t g_rc_control_ready = 0U;
 
 static uint8_t g_rc_dma_rx_buffer[RC_DMA_BUFFER_COUNT]
                                   [SBUS_RX_BUF_LEN]
@@ -88,6 +92,25 @@ void RcSystem_Process(void)
     }
 
     RC_UpdateOfflineState(now_ms);
+
+    if ((g_rc_system.receive.ready != 0U) &&
+        (remote_ctrl.rc_lost == false))
+    {
+        g_rc_control_ready = 1U;
+        g_rc_not_ready_since_ms = 0U;
+    }
+    else if (g_rc_control_ready != 0U)
+    {
+        if (g_rc_not_ready_since_ms == 0U)
+        {
+            g_rc_not_ready_since_ms = now_ms;
+        }
+        else if ((uint32_t)(now_ms - g_rc_not_ready_since_ms) >
+                 RC_NOT_READY_GRACE_MS)
+        {
+            g_rc_control_ready = 0U;
+        }
+    }
 }
 
 DbgRet RcSystem_DebugSendArgs(const char *name, double value, ...)
@@ -107,10 +130,7 @@ DbgRet RcSystem_DebugSendArgs(const char *name, double value, ...)
 
 uint8_t RcSystem_IsReady(void)
 {
-    return ((g_rc_system.receive.ready != 0U) &&
-            (remote_ctrl.rc_lost == false))
-               ? 1U
-               : 0U;
+    return g_rc_control_ready;
 }
 
 uint32_t RcSystem_GetValidFrameCount(void)

@@ -12,8 +12,6 @@
 #include "cmsis_os2.h"
 #include "rc_system.h"
 
-#define INPUT_RC_NOT_READY_GRACE_CYCLES (50U)
-
 static InputTask_t g_input_task = {
     .arm_command = {
         .mode = ARM_CONTROL_MODE_PRESET,
@@ -97,7 +95,6 @@ void InputTask_Run(void)
     for (;;)
     {
         uint32_t sw2_edges;
-        bool rc_ready;
         bool output_enabled;
 
         RcSystem_Process();
@@ -119,26 +116,16 @@ void InputTask_Run(void)
         }
 
         input_task_update_arm_command();
-        rc_ready = RcSystem_IsReady() != 0U;
         if (g_input_task.locked)
         {
-            g_input_task.rc_not_ready_cycles = 0U;
             g_input_task.arm_command.enabled = false;
         }
-        else if (rc_ready)
+        else if (RcSystem_IsReady() != 0U)
         {
-            g_input_task.rc_not_ready_cycles = 0U;
             g_input_task.arm_command.enabled = true;
-        }
-        else if (g_input_task.arm_command.enabled &&
-                 (g_input_task.rc_not_ready_cycles <
-                  INPUT_RC_NOT_READY_GRACE_CYCLES))
-        {
-            g_input_task.rc_not_ready_cycles++;
         }
         else
         {
-            g_input_task.rc_not_ready_cycles = 0U;
             g_input_task.arm_command.enabled = false;
         }
         output_enabled = g_input_task.arm_command.enabled;
