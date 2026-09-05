@@ -245,9 +245,9 @@ static bool chassis_read_remote_command(float *vx_mm_s,
                       (float)RC_CH_VALUE_MAX) *
         remote_speed_scale_mm_s_per_count;
     *vy_mm_s =
-        chassis_clamp((float)channel_0,
-                      -(float)RC_CH_VALUE_MAX,
-                      (float)RC_CH_VALUE_MAX) *
+        -chassis_clamp((float)channel_0,
+                       -(float)RC_CH_VALUE_MAX,
+                       (float)RC_CH_VALUE_MAX) *
         remote_speed_scale_mm_s_per_count;
     *vw_deg_s =
         -chassis_clamp((float)channel_2,
