@@ -154,11 +154,22 @@ typedef struct
     uint32_t can2_send_failure_count;
 } ArmTaskDebug_t;
 
-/** @brief Local PID instances owned by ArmTask. */
+/** @brief roll3 在 H7 上执行的角度-速度串级 PID。 */
 typedef struct
 {
-    PidController_t roll3_angle;
-    PidController_t roll3_speed;
+    PidController_t angle;
+    PidController_t speed;
+} ArmRoll3Pid_t;
+
+/**
+ * @brief ArmTask 持有的全部 PID 参数与运行状态。
+ * @note motor_internal 仅作为电机内部控制参数的统一存放位置，H7 不对其
+ *       调用 pid_compute()；各字段的协议含义由对应电机驱动决定。
+ */
+typedef struct
+{
+    PidController_t motor_internal[ARM_JOINT_COUNT];
+    ArmRoll3Pid_t roll3;
 } ArmTaskPid_t;
 
 /** @brief Per-joint state for hand-guided pose holding. */

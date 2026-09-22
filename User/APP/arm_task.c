@@ -73,13 +73,6 @@ typedef struct
     bool wrap_to_pi;
 } ArmJointMapping_t;
 
-typedef struct
-{
-    float kp;
-    float kd;
-    float max_step_rad;
-} ArmJointControlConfig_t;
-
 /* 固定机构映射：驱动反馈先统一为输出轴 rad，再应用方向与零点。
  * Damiao 反馈为输出轴 rad；GM6020 使用单圈编码器转 rad；GO8010 驱动
  * 已应用 6.33:1 减速比，因此这里不能再次除以 UNITREE_8010_RATIO。
@@ -104,19 +97,6 @@ static const ArmJoint_e
         [CUSTOM_CONTROLLER_JOINT_ROLL2] = ARM_JOINT_ROLL2,
         [CUSTOM_CONTROLLER_JOINT_PITCH3] = ARM_JOINT_PITCH3,
         [CUSTOM_CONTROLLER_JOINT_ROLL3] = ARM_JOINT_ROLL3,
-    };
-
-/** Motor-side position gains and fixed joint-space target steps. */
-static const ArmJointControlConfig_t
-    g_arm_joint_control_config[ARM_JOINT_COUNT] = {
-        [ARM_JOINT_BIG_YAW] = {25.0f, 0.01f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_PITCH1] = {63.0f, 0.07f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_ROLL1] = {0.0f, 0.0f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_PITCH2] = {1.0f, 0.06f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_ROLL2] = {15.0f, 0.01f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_PITCH3] = {15.0f, 0.02f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_ROLL3] = {0.0f, 0.0f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_GRIP] = {18.0f, 0.10f, ARM_JOINT_TARGET_STEP_RAD},
     };
 
 /*
@@ -212,35 +192,65 @@ ArmTask_t g_arm_task = {
     .pitch2_motor =
         UNITREE_MOTOR_CREATE(UNITREE_GO8010, 1U, 1U),
     .pid = {
-        .roll3_angle = {
-            .kp = 10.0f,
-            .ki = 0.0f,
-            .kd = 0.0f,
-            .mode = PID_POSITIONAL_MODE,
-            .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT |
-                                 PID_IMPROVEMENT_INTEGRAL_LIMIT,
-            .improvement = {
-                .output_min = -100.0f,
-                .output_max = 100.0f,
-                .integral_limit = 10.0f,
+        .motor_internal = {
+            [ARM_JOINT_BIG_YAW] = {
+                .kp = 25.0f,
+                .kd = 0.01f,
             },
-            .initialized = true,
-            .last_status = PID_STATUS_OK,
+            [ARM_JOINT_PITCH1] = {
+                /* Pos_mode 当前只编码目标位置与速度，Kp/Kd 不随控制帧发送。 */
+                .kp = 63.0f,
+                .kd = 0.07f,
+            },
+            [ARM_JOINT_PITCH2] = {
+                /* GO8010 将 Kp/Kd 分别编码为 K_pos/K_spd。 */
+                .kp = 1.0f,
+                .kd = 0.06f,
+            },
+            [ARM_JOINT_ROLL2] = {
+                .kp = 15.0f,
+                .kd = 0.01f,
+            },
+            [ARM_JOINT_PITCH3] = {
+                .kp = 15.0f,
+                .kd = 0.02f,
+            },
+            [ARM_JOINT_GRIP] = {
+                .kp = 18.0f,
+                .kd = 0.10f,
+            },
         },
-        .roll3_speed = {
-            .kp = 80.0f,
-            .ki = 0.0f,
-            .kd = 0.0f,
-            .mode = PID_POSITIONAL_MODE,
-            .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT |
-                                 PID_IMPROVEMENT_INTEGRAL_LIMIT,
-            .improvement = {
-                .output_min = -15000.0f,
-                .output_max = 15000.0f,
-                .integral_limit = 500.0f,
+        .roll3 = {
+            .angle = {
+                .kp = 10.0f,
+                .ki = 0.0f,
+                .kd = 0.0f,
+                .mode = PID_POSITIONAL_MODE,
+                .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT |
+                                     PID_IMPROVEMENT_INTEGRAL_LIMIT,
+                .improvement = {
+                    .output_min = -100.0f,
+                    .output_max = 100.0f,
+                    .integral_limit = 10.0f,
+                },
+                .initialized = true,
+                .last_status = PID_STATUS_OK,
             },
-            .initialized = true,
-            .last_status = PID_STATUS_OK,
+            .speed = {
+                .kp = 80.0f,
+                .ki = 0.0f,
+                .kd = 0.0f,
+                .mode = PID_POSITIONAL_MODE,
+                .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT |
+                                     PID_IMPROVEMENT_INTEGRAL_LIMIT,
+                .improvement = {
+                    .output_min = -15000.0f,
+                    .output_max = 15000.0f,
+                    .integral_limit = 500.0f,
+                },
+                .initialized = true,
+                .last_status = PID_STATUS_OK,
+            },
         },
     },
     .control = {
@@ -764,8 +774,8 @@ static void arm_task_process_enable_state(bool enabled, uint32_t now_ms)
         g_arm_task.control.target_initialized = false;
         g_arm_task.control.hold.initialized = false;
         g_arm_task.control.control_active = false;
-        (void)pid_reset(&g_arm_task.pid.roll3_angle);
-        (void)pid_reset(&g_arm_task.pid.roll3_speed);
+        (void)pid_reset(&g_arm_task.pid.roll3.angle);
+        (void)pid_reset(&g_arm_task.pid.roll3.speed);
     }
 
     for (offset = 0U; offset < ARM_DAMIAO_MOTOR_COUNT; offset++)
@@ -1036,8 +1046,7 @@ static void arm_task_update_preset_targets(
             float channel_ratio =
                 (float)remote_ctrl.rc.ch[3] / (float)RC_CH_VALUE_MAX;
             float grip_step_rad =
-                channel_ratio * g_arm_joint_control_config[joint]
-                                      .max_step_rad *
+                channel_ratio * ARM_JOINT_TARGET_STEP_RAD *
                 ARM_GRIP_CONTROL_SENSITIVITY;
 
             /* 夹爪不使用姿态表目标，ch[3] 仅以低灵敏度增量控制。 */
@@ -1142,7 +1151,7 @@ static void arm_task_update_target_ramps(ArmControlMode_e mode)
         float maximum_step_rad =
             (mode == ARM_CONTROL_MODE_CUSTOM)
                 ? ARM_CUSTOM_JOINT_TARGET_STEP_RAD
-                : g_arm_joint_control_config[joint].max_step_rad;
+                : ARM_JOINT_TARGET_STEP_RAD;
 
         if ((mode == ARM_CONTROL_MODE_CUSTOM) &&
             (joint == ARM_JOINT_GRIP))
@@ -1352,7 +1361,7 @@ static int16_t arm_task_compute_roll3_current(void)
     float target_speed_rpm = 0.0f;
     float current_command = 0.0f;
 
-    if (pid_compute(&g_arm_task.pid.roll3_angle,
+    if (pid_compute(&g_arm_task.pid.roll3.angle,
                     nearest_target_rad * 180.0f / ARM_PI_RAD,
                     feedback_rad * 180.0f / ARM_PI_RAD,
                     ARM_TASK_PERIOD_S,
@@ -1360,7 +1369,7 @@ static int16_t arm_task_compute_roll3_current(void)
     {
         return 0;
     }
-    if (pid_compute(&g_arm_task.pid.roll3_speed,
+    if (pid_compute(&g_arm_task.pid.roll3.speed,
                     target_speed_rpm,
                     (float)g_arm_task.roll3_motor.Data.Velocity,
                     ARM_TASK_PERIOD_S,
@@ -1472,8 +1481,8 @@ static void arm_task_send_can2_control(bool control_allowed,
                 /* Pos_mode 的 v_des 是位置梯形规划的最大速度。 */
                 motor_target_velocity_rad_s = 0.8f;
             }
-            kp = g_arm_joint_control_config[joint].kp;
-            kd = g_arm_joint_control_config[joint].kd;
+            kp = g_arm_task.pid.motor_internal[joint].kp;
+            kd = g_arm_task.pid.motor_internal[joint].kd;
             torque_ff = arm_task_damiao_torque_feedforward(
                 joint,
                 gravity);
@@ -1532,8 +1541,8 @@ static void arm_task_send_pitch2_control(
             ARM_JOINT_PITCH2,
             g_arm_task.control.joint_target_rad[ARM_JOINT_PITCH2],
             &motor_target_rad);
-        kp = g_arm_joint_control_config[ARM_JOINT_PITCH2].kp;
-        kd = g_arm_joint_control_config[ARM_JOINT_PITCH2].kd;
+        kp = g_arm_task.pid.motor_internal[ARM_JOINT_PITCH2].kp;
+        kd = g_arm_task.pid.motor_internal[ARM_JOINT_PITCH2].kd;
         torque_ff = gravity->pitch2_torque_nm;
     }
 
@@ -1555,8 +1564,8 @@ static void arm_task_deactivate_control(const ArmTaskCommand_t *command)
 {
     if (g_arm_task.control.control_active)
     {
-        (void)pid_reset(&g_arm_task.pid.roll3_angle);
-        (void)pid_reset(&g_arm_task.pid.roll3_speed);
+        (void)pid_reset(&g_arm_task.pid.roll3.angle);
+        (void)pid_reset(&g_arm_task.pid.roll3.speed);
     }
     g_arm_task.control.control_active = false;
     g_arm_task.control.target_initialized = false;
@@ -1592,8 +1601,8 @@ static void arm_task_step(void)
     {
         if (!g_arm_task.control.control_active)
         {
-            (void)pid_reset(&g_arm_task.pid.roll3_angle);
-            (void)pid_reset(&g_arm_task.pid.roll3_speed);
+            (void)pid_reset(&g_arm_task.pid.roll3.angle);
+            (void)pid_reset(&g_arm_task.pid.roll3.speed);
             g_arm_task.control.target_initialized = false;
             g_arm_task.control.targets_frozen = false;
             g_arm_task.control.hold.initialized = false;
