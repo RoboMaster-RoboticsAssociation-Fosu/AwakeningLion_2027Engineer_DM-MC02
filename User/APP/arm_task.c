@@ -42,8 +42,8 @@
 #define ARM_DAMIAO_MAX_ATTEMPTS           (1U + ARM_DAMIAO_MAX_RETRIES)
 
 /* 各控制模式的目标斜坡与HOLD判定。 */
-#define ARM_JOINT_TARGET_STEP_RAD          0.0005f
-#define ARM_CUSTOM_JOINT_TARGET_STEP_RAD   0.0005f
+#define ARM_JOINT_TARGET_STEP_RAD          0.001f
+#define ARM_CUSTOM_JOINT_TARGET_STEP_RAD   0.001f
 #define ARM_HOLD_MOVING_THRESHOLD_RAD_S    0.08f
 #define ARM_HOLD_SETTLE_TIME_MS            50U
 
@@ -113,8 +113,8 @@ static const ArmJointControlConfig_t
         [ARM_JOINT_PITCH1] = {63.0f, 0.07f, ARM_JOINT_TARGET_STEP_RAD},
         [ARM_JOINT_ROLL1] = {0.0f, 0.0f, ARM_JOINT_TARGET_STEP_RAD},
         [ARM_JOINT_PITCH2] = {1.0f, 0.06f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_ROLL2] = {7.0f, 0.01f, ARM_JOINT_TARGET_STEP_RAD},
-        [ARM_JOINT_PITCH3] = {10.0f, 0.02f, ARM_JOINT_TARGET_STEP_RAD},
+        [ARM_JOINT_ROLL2] = {15.0f, 0.01f, ARM_JOINT_TARGET_STEP_RAD},
+        [ARM_JOINT_PITCH3] = {15.0f, 0.02f, ARM_JOINT_TARGET_STEP_RAD},
         [ARM_JOINT_ROLL3] = {0.0f, 0.0f, ARM_JOINT_TARGET_STEP_RAD},
         [ARM_JOINT_GRIP] = {18.0f, 0.10f, ARM_JOINT_TARGET_STEP_RAD},
     };
@@ -213,7 +213,7 @@ ArmTask_t g_arm_task = {
         UNITREE_MOTOR_CREATE(UNITREE_GO8010, 1U, 1U),
     .pid = {
         .roll3_angle = {
-            .kp = 5.0f,
+            .kp = 10.0f,
             .ki = 0.0f,
             .kd = 0.0f,
             .mode = PID_POSITIONAL_MODE,
@@ -228,7 +228,7 @@ ArmTask_t g_arm_task = {
             .last_status = PID_STATUS_OK,
         },
         .roll3_speed = {
-            .kp = 40.0f,
+            .kp = 80.0f,
             .ki = 0.0f,
             .kd = 0.0f,
             .mode = PID_POSITIONAL_MODE,
