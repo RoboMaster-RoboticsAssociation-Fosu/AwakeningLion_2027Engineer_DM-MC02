@@ -27,7 +27,7 @@
 /* Control timing and safety ------------------------------------------------ */
 #define CHASSIS_TASK_PERIOD_S               (0.001F)
 #define CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS   (50U)
-#define CHASSIS_MAX_LINEAR_SPEED_MPS        (1.0F)
+#define CHASSIS_MAX_LINEAR_SPEED_MPS        (2.0F)
 #define CHASSIS_MAX_ROTATION_SPEED_RAD_S    (2.0F)
 #define CHASSIS_TASK_NOTIFY_ENABLED         (1UL << 0U)
 #define CHASSIS_TASK_NOTIFY_DISABLED        (1UL << 1U)
