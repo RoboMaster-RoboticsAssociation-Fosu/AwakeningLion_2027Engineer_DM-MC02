@@ -58,13 +58,23 @@ static const struct DM_Motor_MitLimits g_dm_motor_mit_limits[DM_MOTOR_TYPE_NUM] 
 		.torque_min = J10010L_T_MIN,
 		.torque_max = J10010L_T_MAX,
 	},
+    /* J8520P-2EC 与旧型号共用发送/反馈格式，使用自身的预设映射范围。 */
+    [DM_J8520P_2EC] = {
+        .position_min = J8520P_2EC_P_MIN,
+        .position_max = J8520P_2EC_P_MAX,
+        .velocity_min = J8520P_2EC_V_MIN,
+        .velocity_max = J8520P_2EC_V_MAX,
+        .torque_min = J8520P_2EC_T_MIN,
+        .torque_max = J8520P_2EC_T_MAX,
+    },
 };
 
 static const struct DM_Motor_MitLimits *DM_GetMitLimits(DM_Motor_Type_e motor_type)
 {
 	if((motor_type == DM_J4310) ||
 	   (motor_type == DM_J4340) ||
-	   (motor_type == DM_J10010L))
+	   (motor_type == DM_J10010L) ||
+       (motor_type == DM_J8520P_2EC))
 	{
 		return &g_dm_motor_mit_limits[motor_type];
 	}

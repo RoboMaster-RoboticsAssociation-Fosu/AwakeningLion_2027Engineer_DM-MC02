@@ -52,6 +52,16 @@
 #define J10010L_T_MIN    -200.0f
 #define J10010L_T_MAX    200.0f
 
+/* DM-J8520P-2EC V1.1 手册第 14～15 页的预设编码范围，须与电机 PMAX/VMAX/TMAX 一致。
+ * 位置、速度、转矩均为减速后的输出轴值；这里沿用协议映射，不另加机械峰值限幅。
+ */
+#define J8520P_2EC_P_MIN    -12.566f
+#define J8520P_2EC_P_MAX    12.566f
+#define J8520P_2EC_V_MIN    -20.0f
+#define J8520P_2EC_V_MAX    20.0f
+#define J8520P_2EC_T_MIN    -300.0f
+#define J8520P_2EC_T_MAX    300.0f
+
 /* Enums -------------------------------------------------------------------- */
 /**
  * @brief DM电机类型枚举
@@ -61,6 +71,7 @@ typedef enum{
     DM_J4340,
     DM_J8006,
     DM_J10010L,
+    DM_J8520P_2EC,                  /* 追加型号，保留已有型号的枚举值。 */
     DM_MOTOR_TYPE_NUM,
 }DM_Motor_Type_e;
 
@@ -75,15 +86,19 @@ typedef enum{
 
 /**
  * @brief DM 反馈帧 D[0] 高四位状态码。
- * @note 0 和 1 分别是失能、使能；3~5、8~E 是说明书定义的驱动故障。
+ * @note 0 和 1 分别是失能、使能；异常码含义须结合型号手册。
+ *       J8520P-2EC：2/3 为电机侧/输出轴编码器未识别，5/7 为读取编码器错误。
+ *       保留旧型号的 3/4/5 名称和数值，新型号反馈仍保存原始状态码。
  */
 typedef enum
 {
 	DM_MOTOR_STATE_DISABLED = 0x0,
 	DM_MOTOR_STATE_ENABLED = 0x1,
+    DM_MOTOR_STATE_MOTOR_ENCODER_NOT_RECOGNIZED = 0x2, /* J8520P-2EC。 */
 	DM_MOTOR_STATE_OUTPUT_ENCODER_CALIBRATION_ERROR = 0x3,
 	DM_MOTOR_STATE_SENSOR_ERROR = 0x4,
 	DM_MOTOR_STATE_MOTOR_ENCODER_CALIBRATION_ERROR = 0x5,
+    DM_MOTOR_STATE_ENCODER_READ_ERROR = 0x7,          /* J8520P-2EC。 */
 	DM_MOTOR_STATE_OVER_VOLTAGE = 0x8,
 	DM_MOTOR_STATE_UNDER_VOLTAGE = 0x9,
 	DM_MOTOR_STATE_OVER_CURRENT = 0xA,
@@ -158,6 +173,8 @@ typedef struct
 /**
  * @brief 使用固定模式、型号和收发 ID 静态创建一个 DM 电机实例。
  * @note 反馈数据和在线状态由 C 的静态零初始化完成，不需要额外 Init。
+ *       新型号可使用 DM_MOTOR_CREATE(Mit_mode, DM_J8520P_2EC, tx_id, rx_id)。
+ *       固定模式和编码范围须与电机已配置的值一致，创建宏不配置硬件。
  */
 #define DM_MOTOR_CREATE(mode_value, type_value, tx_id_value, rx_id_value) \
 	{ \
