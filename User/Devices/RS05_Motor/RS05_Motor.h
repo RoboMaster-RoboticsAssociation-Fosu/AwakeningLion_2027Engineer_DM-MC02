@@ -137,6 +137,16 @@ typedef struct
     } data;
 } RS05_Motor_Value_t;
 
+/** @brief 五参数运控的协议限幅结果；数值位于整数编码前，不包含量化误差。 */
+typedef struct
+{
+    float position_rad;
+    float velocity_rad_s;
+    float kp;
+    float kd;
+    float torque_nm;
+} RS05_Motor_MotionCommand_t;
+
 /** @brief 运动反馈；state 为 0 复位/1 标定/2 运行，不等于运行模式参数。 */
 typedef struct
 {
@@ -283,14 +293,17 @@ RS05_Motor_Status_e RS05_Motor_SetActiveReport(FDCAN_HandleTypeDef *hcan,
  * @param kp 位置增益 [0, 500]。
  * @param kd 速度增益 [0, 5]。
  * @param torque_nm 前馈力矩 N·m，编码量程 [-5.5, 5.5]。
+ * @param applied 可选限幅结果，NULL 表示不读取；只在 OK/CLAMPED 时更新。
  * @note 要求电机已设为运控并使能；有限越界钳位，NaN/Inf 拒绝且不发送。
  *       整数映射采用截断，MIT 12 位满量程为 4095；管理指令碰撞拒绝发送。
  *       CLAMPED 仅在钳位后的帧成功入队时返回，入队失败优先返回 SEND_FAILED。
+ *       结果为限幅后、整数编码前的值；失败保持输出不变，不表示电机已执行。
  */
 RS05_Motor_Status_e RS05_Motor_ControlMotion(FDCAN_HandleTypeDef *hcan,
                                            const RS05_Motor_Info_t *motor,
                                            float position_rad, float velocity_rad_s,
-                                           float kp, float kd, float torque_nm);
+                                           float kp, float kd, float torque_nm,
+                                           RS05_Motor_MotionCommand_t *applied);
 
 /* MIT 浮点控制接口：私有协议返回 UNSUPPORTED ----------------------------- */
 

@@ -9,6 +9,9 @@
  */
 
 #include "chassis_task.h"
+#include "robot_board_config.h"
+
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
 
 #include "FreeRTOS.h"
 #include "DJI_Motor.h"
@@ -17,7 +20,7 @@
 #include "cmsis_os2.h"
 #include "fdcan.h"
 #include "pid.h"
-#include "rc_system.h"
+#include "board_link.h"
 #include "task.h"
 
 #include <math.h>
@@ -224,7 +227,7 @@ static bool chassis_read_remote_command(float *vx_mm_s,
 
     if ((vx_mm_s == NULL) || (vy_mm_s == NULL) ||
         (vw_deg_s == NULL) ||
-        (RcSystem_IsReady() == 0U))
+        (!g_board_link.remote_valid || remote_ctrl.rc_lost))
     {
         return false;
     }
@@ -472,3 +475,5 @@ void ChassisTask_Run(void)
         chassis_task_step(enabled);
     }
 }
+
+#endif /* ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS */

@@ -109,6 +109,16 @@ typedef enum
 }DM_Motor_State_e;
 
 /* Structs ------------------------------------------------------------------ */
+/** @brief MIT 五参数的协议限幅结果；数值位于整数编码前，不包含量化误差。 */
+typedef struct
+{
+    float pos;     /* 输出轴位置，rad。 */
+    float vel;     /* 输出轴速度，rad/s。 */
+    float kp;      /* 位置增益。 */
+    float kd;      /* 速度增益。 */
+    float torq;    /* 前馈力矩，N·m。 */
+}DM_Motor_MitCommand_t;
+
 /**
  * @brief DM电机ID结构体
  */
@@ -197,7 +207,16 @@ uint8_t DM_Enable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8
 uint8_t DM_Disable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8_t delay_time);
 uint8_t DM_Save_Motor_Zero(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint8_t delay_time);
 void DM_Motor_Info_Update(DM_Motor_Info_t *motor, const uint8_t *rx_data,uint32_t data_len);
-uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time);
+/**
+ * @brief 按现有模式发送控制指令，MIT 五参数的协议限幅统一在驱动完成。
+ * @param applied 可选 MIT 限幅结果，NULL 表示不读取；只在 MIT 发送成功后更新。
+ * @return 0 表示发送成功，非零表示参数、型号、模式无效或发送失败。
+ * @note MIT 拒绝 NaN/Inf；位置/速度浮点模式保持原始发送语义，不更新 applied。
+ *       结果为限幅后、整数编码前的值；失败保持输出不变，不表示电机已执行。
+ */
+uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor,
+                      float pos, float vel, float kp, float kd, float torq,
+                      uint8_t delay_time, DM_Motor_MitCommand_t *applied);
 
 /* -------------------------------------------------------------------------- */
 #endif /* __DM_MOTOR_H */

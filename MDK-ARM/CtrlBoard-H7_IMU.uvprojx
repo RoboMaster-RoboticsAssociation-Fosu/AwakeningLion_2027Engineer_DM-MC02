@@ -335,7 +335,7 @@
               <MiscControls>-Wno-ignored-attributes</MiscControls>
               <Define>USE_HAL_DRIVER,STM32H723xx,USE_PWR_LDO_SUPPLY</Define>
               <Undefine />
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;../User/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/Algorithm/EKF;../User/Algorithm/kalman;../User/Algorithm/mahony;../User/APP;../User/Bsp;../User/Devices/BMI088;../User/Devices/DM_Motor;../User/Algorithm/VMC;../User/Controller;../User/Lib;../User/Algorithm/PID;../User/Algorithm/filter;../User/Devices/Remote_Control;../User/Devices/Button;../User/Devices/DJI_Motor;../User/Config;../User/Devices/Unitree_Motor;../User/Algorithm/FIFO;../User/Algorithm/CRC;../User/Algorithm/Arm;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../User/Devices/PC_Comm;../User/Devices/PS2_Device;../User/Devices/HWT6033;../User/Protocol/DbgDisp;../User/Protocol/VOFA;../User/Protocol/CustomController;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Drivers/CMSIS/RTOS2/Include</IncludePath>
+              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;../User/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/Algorithm/EKF;../User/Algorithm/kalman;../User/Algorithm/mahony;../User/APP;../User/Bsp;../User/Devices/BMI088;../User/Devices/DM_Motor;../User/Algorithm/VMC;../User/Controller;../User/Lib;../User/Algorithm/PID;../User/Algorithm/filter;../User/Devices/Remote_Control;../User/Devices/Button;../User/Devices/DJI_Motor;../User/Config;../User/Devices/Unitree_Motor;../User/Algorithm/FIFO;../User/Algorithm/CRC;../User/Algorithm/Arm;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../User/Devices/PC_Comm;../User/Devices/PS2_Device;../User/Devices/HWT6033;../User/Protocol/DbgDisp;../User/Protocol/VOFA;../User/Protocol/CustomController;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Drivers/CMSIS/RTOS2/Include;../User/Devices/RS05_Motor;../User/Protocol/BoardLink</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1122,6 +1122,11 @@
               <FileType>1</FileType>
               <FilePath>..\User\Devices\HWT6033\HWT6033.c</FilePath>
             </File>
+            <File>
+              <FileName>RS05_Motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Devices\RS05_Motor\RS05_Motor.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1830,6 +1835,11 @@
               <FileType>1</FileType>
               <FilePath>..\User\APP\vofa_system.c</FilePath>
             </File>
+            <File>
+              <FileName>board_link.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\APP\board_link.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1849,6 +1859,16 @@
               <FileName>custom_controller_protocol.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\User\Protocol\CustomController\custom_controller_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>board_link_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Protocol\BoardLink\board_link_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>board_link_payload.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\User\Protocol\BoardLink\board_link_payload.c</FilePath>
             </File>
           </Files>
         </Group>

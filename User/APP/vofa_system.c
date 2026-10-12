@@ -1,176 +1,95 @@
-/**
- ******************************************************************************
- * @file    vofa_system.c
- * @brief   集中读取各任务调参量并通过 UART7 上传。
- ******************************************************************************
- */
-
+/** @file vofa_system.c @brief 读取本板实际启用的控制任务，UART7 只承担 VOFA TX。 */
 #include "vofa_system.h"
-
+#include "robot_board_config.h"
 #include "Remote_Control.h"
-#include "arm_task.h"
-#include "chassis_task.h"
-#include "custom_controller_system.h"
 #include "ins_task.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "usart.h"
 #include "vofa.h"
-
-/** 手工修改此宏并重新编译，即可选择唯一启用的VOFA通道布局。 */
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
+#include "arm_task.h"
+#ifndef VOFA_ACTIVE_VIEW
 #define VOFA_ACTIVE_VIEW VOFA_VIEW_ARM_JOINT_ANGLES
-#define VOFA_SYSTEM_MAX_CHANNELS 14U
+#endif
+#else
+#include "chassis_task.h"
+#ifndef VOFA_ACTIVE_VIEW
+#define VOFA_ACTIVE_VIEW VOFA_VIEW_CHASSIS_SPEED_PID
+#endif
+#endif
 
-static float g_vofa_frame[VOFA_SYSTEM_MAX_CHANNELS];
-
-static const ArmJoint_e g_vofa_arm_control_joint_order[] = {
-    ARM_JOINT_BIG_YAW,
-    ARM_JOINT_PITCH1,
-    ARM_JOINT_PITCH2,
-    ARM_JOINT_ROLL2,
-    ARM_JOINT_PITCH3,
-    ARM_JOINT_ROLL3,
-    ARM_JOINT_GRIP,
-};
-
-static uint16_t vofa_system_fill_arm_joint_angles(void)
-{
-    uint32_t joint;
-
-    for (joint = 0U; joint < (uint32_t)ARM_JOINT_COUNT; joint++)
-    {
-        g_vofa_frame[joint] =
-            g_arm_task.joint_feedback[joint].angle_rad;
-    }
-    return (uint16_t)ARM_JOINT_COUNT;
-}
-
-static uint16_t vofa_system_fill_chassis_speed_pid(void)
-{
-    uint32_t wheel;
-
-    for (wheel = 0U; wheel < (uint32_t)CHASSIS_WHEEL_COUNT; wheel++)
-    {
-        uint32_t channel = wheel * 3U;
-
-        g_vofa_frame[channel] =
-            g_chassis.wheel_speed_reference_rpm[wheel];
-        g_vofa_frame[channel + 1U] =
-            (float)g_chassis.wheel_motor[wheel].Data.Velocity;
-        g_vofa_frame[channel + 2U] =
-            (float)g_chassis.wheel_motor[wheel].Data.SET_Current;
-    }
-    return (uint16_t)(CHASSIS_WHEEL_COUNT * 3U);
-}
-
-static uint16_t vofa_system_fill_remote_input(void)
-{
-    uint32_t channel;
-
-    for (channel = 0U; channel < 4U; channel++)
-    {
-        g_vofa_frame[channel] = (float)remote_ctrl.rc.ch[channel];
-    }
-    g_vofa_frame[4] = (float)remote_ctrl.rc.iw;
-    return 5U;
-}
-
-static uint16_t vofa_system_fill_ins_attitude(void)
-{
-    uint32_t axis;
-
-    g_vofa_frame[0] = INS.Roll;
-    g_vofa_frame[1] = INS.Pitch;
-    g_vofa_frame[2] = INS.Yaw;
-    for (axis = 0U; axis < 3U; axis++)
-    {
-        g_vofa_frame[3U + axis] = INS.Gyro[axis];
-        g_vofa_frame[6U + axis] = INS.Accel[axis];
-    }
-    return 9U;
-}
-
-static uint16_t vofa_system_fill_arm_motor_link_state(void)
-{
-    uint32_t joint;
-
-    for (joint = 0U; joint < (uint32_t)ARM_JOINT_COUNT; joint++)
-    {
-        g_vofa_frame[joint] =
-            (float)g_arm_task.motor_link_state[joint];
-    }
-    return (uint16_t)ARM_JOINT_COUNT;
-}
-
-static uint16_t vofa_system_fill_arm_control_angles(void)
-{
-    uint32_t index;
-
-    for (index = 0U;
-         index < (sizeof(g_vofa_arm_control_joint_order) /
-                  sizeof(g_vofa_arm_control_joint_order[0]));
-         index++)
-    {
-        ArmJoint_e joint = g_vofa_arm_control_joint_order[index];
-        uint32_t channel = index * 2U;
-
-        g_vofa_frame[channel] =
-            g_arm_task.joint_feedback[joint].angle_rad;
-        g_vofa_frame[channel + 1U] =
-            g_arm_task.control.joint_target_rad[joint];
-    }
-    return (uint16_t)(sizeof(g_vofa_arm_control_joint_order) /
-                      sizeof(g_vofa_arm_control_joint_order[0]) * 2U);
-}
-
-static uint16_t vofa_system_fill_custom_controller(void)
-{
-    CustomControllerSnapshot_t snapshot = {0};
-    uint32_t joint;
-
-    CustomControllerSystem_CopySnapshot(&snapshot);
-    g_vofa_frame[0] = snapshot.online ? 1.0f : 0.0f;
-    for (joint = 0U;
-         joint < CUSTOM_CONTROLLER_JOINT_COUNT;
-         joint++)
-    {
-        g_vofa_frame[1U + joint] = snapshot.joint_target_rad[joint];
-    }
-    g_vofa_frame[1U + CUSTOM_CONTROLLER_JOINT_COUNT] =
-        snapshot.button_pressed ? 1.0f : 0.0f;
-    return (uint16_t)(CUSTOM_CONTROLLER_JOINT_COUNT + 2U);
-}
+static float g_vofa_frame[16];
 
 void VofaSystem_Step(void)
 {
-    uint16_t channel_count;
+    uint16_t channel_count = 0U;
+    uint32_t index;
 
+    /* 与反馈 ISR/INS 快照发布同步；锁内只复制数值，发送不持锁。 */
+    taskENTER_CRITICAL();
     switch ((VofaView_e)VOFA_ACTIVE_VIEW)
     {
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
         case VOFA_VIEW_ARM_JOINT_ANGLES:
-            channel_count = vofa_system_fill_arm_joint_angles();
-            break;
-        case VOFA_VIEW_CHASSIS_SPEED_PID:
-            channel_count = vofa_system_fill_chassis_speed_pid();
-            break;
-        case VOFA_VIEW_REMOTE_INPUT:
-            channel_count = vofa_system_fill_remote_input();
-            break;
-        case VOFA_VIEW_INS_ATTITUDE:
-            channel_count = vofa_system_fill_ins_attitude();
+            for (index = 0U; index < ARM_JOINT_COUNT; index++)
+            {
+                g_vofa_frame[index] = g_arm_task.joint_feedback[index].angle_rad;
+            }
+            channel_count = ARM_JOINT_COUNT;
             break;
         case VOFA_VIEW_ARM_MOTOR_LINK_STATE:
-            channel_count = vofa_system_fill_arm_motor_link_state();
+            for (index = 0U; index < ARM_JOINT_COUNT; index++)
+            {
+                g_vofa_frame[index] = (float)g_arm_task.motor_link_state[index];
+            }
+            channel_count = ARM_JOINT_COUNT;
             break;
         case VOFA_VIEW_ARM_CONTROL_ANGLES:
-            channel_count = vofa_system_fill_arm_control_angles();
+            for (index = 0U; index < ARM_JOINT_COUNT; index++)
+            {
+                g_vofa_frame[index * 2U] = g_arm_task.joint_feedback[index].angle_rad;
+                g_vofa_frame[index * 2U + 1U] = g_arm_task.control.applied_target_rad[index];
+            }
+            channel_count = ARM_JOINT_COUNT * 2U;
             break;
-        case VOFA_VIEW_CUSTOM_CONTROLLER:
+#else
+        case VOFA_VIEW_CHASSIS_SPEED_PID:
+            for (index = 0U; index < CHASSIS_WHEEL_COUNT; index++)
+            {
+                g_vofa_frame[index * 3U] = g_chassis.wheel_speed_reference_rpm[index];
+                g_vofa_frame[index * 3U + 1U] = (float)g_chassis.wheel_motor[index].Data.Velocity;
+                g_vofa_frame[index * 3U + 2U] = (float)g_chassis.wheel_motor[index].Data.SET_Current;
+            }
+            channel_count = CHASSIS_WHEEL_COUNT * 3U;
+            break;
+#endif
+        case VOFA_VIEW_REMOTE_INPUT:
+            for (index = 0U; index < 4U; index++)
+            {
+                g_vofa_frame[index] = (float)remote_ctrl.rc.ch[index];
+            }
+            g_vofa_frame[4] = (float)remote_ctrl.rc.iw;
+            channel_count = 5U;
+            break;
+        case VOFA_VIEW_INS_ATTITUDE:
+            g_vofa_frame[0] = INS.Roll;
+            g_vofa_frame[1] = INS.Pitch;
+            g_vofa_frame[2] = INS.Yaw;
+            for (index = 0U; index < 3U; index++)
+            {
+                g_vofa_frame[3U + index] = INS.Gyro[index];
+                g_vofa_frame[6U + index] = INS.Accel[index];
+            }
+            channel_count = 9U;
+            break;
         default:
-            channel_count = vofa_system_fill_custom_controller();
+            /* 另一板型或尚未接入的视图没有数据，禁止发送伪造的零快照。 */
             break;
     }
-
-    (void)vofa_justfloat_send_it(
-        &huart7,
-        g_vofa_frame,
-        channel_count);
+    taskEXIT_CRITICAL();
+    if (channel_count != 0U)
+    {
+        (void)vofa_justfloat_send_it(&huart7, g_vofa_frame, channel_count);
+    }
 }

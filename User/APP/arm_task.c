@@ -1,1685 +1,509 @@
 /**
- ******************************************************************************
- * @file    arm_task.c
- * @brief   机械臂任务、固定装配、目标状态机与控制链。
- ******************************************************************************
+ * @file arm_task.c
+ * @brief 新机械臂固定装配及电机内部 MIT 角度闭环。
+ * @note 调试阶段只由 Keil 改目标/增益；原因是新自定义控制器协议尚未接入。
+ *       范围：全部 8 轴；移除条件：新控制器目标输入经过确认并正式接入。
  */
-
 #include "arm_task.h"
+#include "robot_board_config.h"
 
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
 #include "FreeRTOS.h"
-#include "arm_gravity_compensation.h"
+#include "task.h"
 #include "bsp_dwt.h"
-#include "cmsis_os2.h"
-#include "bsp_uart.h"
 #include "fdcan.h"
 #include "led_system.h"
-#include "Remote_Control.h"
-#include "task.h"
-#include "usart.h"
-
 #include <math.h>
-#include <stddef.h>
 
-/* 任务通知与周期调度。 */
-#define ARM_TASK_NOTIFY_COMMAND           (1UL << 0U)
-#define ARM_TASK_PERIOD_S                 0.001f
-#define ARM_CAN2_SEND_PERIOD_MS           2U
-
-/* 角度换算与反馈安全。 */
-#define ARM_PI_RAD                        3.14159265358979323846f
-#define ARM_TWO_PI_RAD                    (2.0f * ARM_PI_RAD)
-#define ARM_DJI_ENCODER_COUNTS_PER_TURN  8192.0f
-#define ARM_FEEDBACK_JUMP_LIMIT_RAD        0.35f
-
-/* 电机反馈在线与达妙命令确认时序。 */
-#define ARM_DJI_FEEDBACK_TIMEOUT_MS       50U
-#define ARM_UNITREE_FEEDBACK_TIMEOUT_MS   20U
-#define ARM_DAMIAO_CONTROL_TIMEOUT_MS     50U
-#define ARM_DAMIAO_RESPONSE_TIMEOUT_MS    10U
-#define ARM_DAMIAO_RETRY_INTERVAL_MS      50U
-#define ARM_DAMIAO_MAX_RETRIES             5U
-#define ARM_DAMIAO_MAX_ATTEMPTS           (1U + ARM_DAMIAO_MAX_RETRIES)
-
-/* 各控制模式的目标斜坡与HOLD判定。 */
-#define ARM_JOINT_TARGET_STEP_RAD          0.001f
-#define ARM_CUSTOM_JOINT_TARGET_STEP_RAD   0.001f
-#define ARM_HOLD_MOVING_THRESHOLD_RAD_S    0.08f
-#define ARM_HOLD_SETTLE_TIME_MS            50U
-
-/* 关节机构角限位及夹爪增量控制。 */
-#define ARM_PITCH1_TARGET_MIN_RAD          0.0f
-#define ARM_GRIP_CONTROL_SENSITIVITY       2.0f
-#define ARM_CUSTOM_GRIP_TARGET_STEP_RAD   \
-    (ARM_JOINT_TARGET_STEP_RAD * ARM_GRIP_CONTROL_SENSITIVITY)
-#define ARM_GRIP_TARGET_MIN_RAD            (-2.3f)
-#define ARM_GRIP_TARGET_MAX_RAD            0.6f
-
-/* 执行器输出边界。 */
-#define ARM_PITCH2_TORQUE_MIN_NM           (-1.42f)
-#define ARM_PITCH2_TORQUE_MAX_NM           1.43f
-
-/* 硬件装配边界：roll1保留实例和映射，但当前不参与控制或失联判定。 */
-#define ARM_DAMIAO_INSTALLED_MASK                                      \
-    (((1UL << ARM_DAMIAO_MOTOR_COUNT) - 1UL) &                         \
-     ~(1UL << ARM_DAMIAO_ROLL1))
-#define ARM_JOINT_INSTALLED_MASK                                       \
-    (((1UL << ARM_JOINT_COUNT) - 1UL) & ~(1UL << ARM_JOINT_ROLL1))
-
-typedef struct
-{
-    float direction;
-    float zero_rad;
-    bool wrap_to_pi;
-} ArmJointMapping_t;
-
-/* 固定机构映射：驱动反馈先统一为输出轴 rad，再应用方向与零点。
- * Damiao 反馈为输出轴 rad；GM6020 使用单圈编码器转 rad；GO8010 驱动
- * 已应用 6.33:1 减速比，因此这里不能再次除以 UNITREE_8010_RATIO。
- */
-static const ArmJointMapping_t g_arm_joint_mapping[ARM_JOINT_COUNT] = {
-    [ARM_JOINT_BIG_YAW] = {1.0f, 0.0f, false},
-    [ARM_JOINT_PITCH1] = {-1.0f, 0.0f, false},
-    [ARM_JOINT_ROLL1] = {1.0f, 0.0f, false},
-    [ARM_JOINT_PITCH2] = {-1.0f, 0.0f, false},
-    [ARM_JOINT_ROLL2] = {1.0f, 0.0f, false},
-    [ARM_JOINT_PITCH3] = {1.0f, 0.1f, false},
-    [ARM_JOINT_ROLL3] = {1.0f, 3.7306414f, true},
-    [ARM_JOINT_GRIP] = {1.0f, 1.8f, false},
-};
-
-/** 自定义控制器线上六轴按最终机构关节目标顺序直接映射。 */
-static const ArmJoint_e
-    g_arm_custom_joint_map[CUSTOM_CONTROLLER_JOINT_COUNT] = {
-        [CUSTOM_CONTROLLER_JOINT_BIG_YAW] = ARM_JOINT_BIG_YAW,
-        [CUSTOM_CONTROLLER_JOINT_PITCH1] = ARM_JOINT_PITCH1,
-        [CUSTOM_CONTROLLER_JOINT_PITCH2] = ARM_JOINT_PITCH2,
-        [CUSTOM_CONTROLLER_JOINT_ROLL2] = ARM_JOINT_ROLL2,
-        [CUSTOM_CONTROLLER_JOINT_PITCH3] = ARM_JOINT_PITCH3,
-        [CUSTOM_CONTROLLER_JOINT_ROLL3] = ARM_JOINT_ROLL3,
-    };
-
-/*
- * Preset poses use calibrated joint-space radians in ArmJoint_e order.
- * Trigger conditions are defined by InputTask:
- * - SW2=UP enters PRESET mode and enables iw action triggers.
- * - SW1=DOWN plus an iw edge selects NORMAL.
- * - SW1=MID plus an iw edge selects CUSTOM_1.
- * - SW1=UP plus iw entering the upper region selects WAVE_1.
- * - SW1=UP plus iw entering the lower region selects WAVE_2.
- * - SW2=MID and SW1=UP plus any iw edge enters HOLD mode.
- * - SW2=MID and SW1=MID plus any iw edge enters CUSTOM mode.
- * - CUSTOM/HOLD plus SW2 moving to UP enters PRESET and selects NORMAL.
- */
-static const ArmPose_t g_arm_pose_normal = {
-    .joint_rad = {
-        [ARM_JOINT_BIG_YAW] = 0.0f,
-        [ARM_JOINT_PITCH1] = 0.0f,
-        [ARM_JOINT_ROLL1] = 0.0f,
-        [ARM_JOINT_PITCH2] = 0.0f,
-        [ARM_JOINT_ROLL2] = 0.0f,
-        [ARM_JOINT_PITCH3] = 0.0f,
-        [ARM_JOINT_ROLL3] = 0.0f,
-    },
-};
-static const ArmPose_t g_arm_pose_wave_1 = {
-    .joint_rad = {
-        [ARM_JOINT_BIG_YAW] = 0.0f,
-        [ARM_JOINT_PITCH1] = 0.64218f,
-        [ARM_JOINT_ROLL1] = 0.0f,
-        [ARM_JOINT_PITCH2] = 1.0447f,
-        [ARM_JOINT_ROLL2] = 0.8f,
-        [ARM_JOINT_PITCH3] = 1.3f,
-        [ARM_JOINT_ROLL3] = 0.0f,
-    },
-};
-static const ArmPose_t g_arm_pose_wave_2 = {
-    .joint_rad = {
-        [ARM_JOINT_BIG_YAW] = 0.0f,
-        [ARM_JOINT_PITCH1] = 0.64218f,
-        [ARM_JOINT_ROLL1] = 0.0f,
-        [ARM_JOINT_PITCH2] = 1.0447f,
-        [ARM_JOINT_ROLL2] = -0.8f,
-        [ARM_JOINT_PITCH3] = 1.3f,
-        [ARM_JOINT_ROLL3] = 0.0f,
-    },
-};
-static const ArmPose_t g_arm_pose_custom_1 = {
-    .joint_rad = {
-        [ARM_JOINT_BIG_YAW] = 0.0f,
-        [ARM_JOINT_PITCH1] = 0.5f,
-        [ARM_JOINT_ROLL1] = 0.0f,
-        [ARM_JOINT_PITCH2] = 0.75f,
-        [ARM_JOINT_ROLL2] = 0.0f,
-        [ARM_JOINT_PITCH3] = -0.32f,
-        [ARM_JOINT_ROLL3] = 0.0f,
-    },
-};
-
-static const ArmJoint_e
-    g_arm_damiao_joint_map[ARM_DAMIAO_MOTOR_COUNT] = {
-        [ARM_DAMIAO_BIG_YAW] = ARM_JOINT_BIG_YAW,
-        [ARM_DAMIAO_PITCH1] = ARM_JOINT_PITCH1,
-        [ARM_DAMIAO_ROLL1] = ARM_JOINT_ROLL1,
-        [ARM_DAMIAO_ROLL2] = ARM_JOINT_ROLL2,
-        [ARM_DAMIAO_GRIP] = ARM_JOINT_GRIP,
-        [ARM_DAMIAO_PITCH3] = ARM_JOINT_PITCH3,
-    };
+#define ARM_TASK_PERIOD_MS 1U
+#define ARM_FEEDBACK_TIMEOUT_MS 50U
+#define ARM_MANAGEMENT_PERIOD_MS 10U
+#define ARM_ALL_MOTORS_MASK ((uint16_t)((1UL << ARM_JOINT_COUNT) - 1UL))
 
 ArmTask_t g_arm_task = {
     .damiao_motor = {
-        [ARM_DAMIAO_BIG_YAW] =
-            DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x00U, 0x10U),
-        [ARM_DAMIAO_PITCH1] =
-            /* Pitch1 使用位置-速度模式：发送 ID 为 0x100 + 0x01。 */
-            DM_MOTOR_CREATE(Pos_mode, DM_J10010L, 0x01U, 0x11U),
-        [ARM_DAMIAO_ROLL1] =
-            DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x02U, 0x12U),
-        [ARM_DAMIAO_ROLL2] =
-            DM_MOTOR_CREATE(Mit_mode, DM_J4310, 0x03U, 0x13U),
-        [ARM_DAMIAO_GRIP] =
-            DM_MOTOR_CREATE(Mit_mode, DM_J4310, 0x04U, 0x14U),
-        [ARM_DAMIAO_PITCH3] =
-            DM_MOTOR_CREATE(Mit_mode, DM_J4310, 0x05U, 0x15U),
+        [ARM_JOINT_YAW] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x01U, 0x11U),
+        [ARM_JOINT_PITCH1] = DM_MOTOR_CREATE(Mit_mode, DM_J10010L, 0x02U, 0x12U),
+        [ARM_JOINT_ROLL1] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x03U, 0x13U),
+        [ARM_JOINT_PITCH2] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x04U, 0x14U),
+        [ARM_JOINT_ROLL2] = DM_MOTOR_CREATE(Mit_mode, DM_J4310, 0x05U, 0x15U),
+        [ARM_JOINT_PITCH3] = DM_MOTOR_CREATE(Mit_mode, DM_J4310, 0x06U, 0x16U),
     },
-    .roll3_motor = {
-        .Motor_Type = DJI_GM6020,
-        .ID_Set = {
-            .TxIdentifier = DJI_GM6020_CURRENT_GROUP5_7_TX_ID,
-            .RxIdentifier = DJI_GM6020_MOTOR5_RX_ID,
-        },
+    .rs05_motor = {
+        [0] = RS05_MOTOR_CREATE(RS05_MOTOR_PROTOCOL_MIT, 0x07U, 0xFDU),
+        [1] = RS05_MOTOR_CREATE(RS05_MOTOR_PROTOCOL_MIT, 0x08U, 0xFDU),
     },
-    .pitch2_motor =
-        UNITREE_MOTOR_CREATE(UNITREE_GO8010, 1U, 1U),
-    .pid = {
-        .motor_internal = {
-            [ARM_JOINT_BIG_YAW] = {
-                .kp = 25.0f,
-                .kd = 0.01f,
-            },
-            [ARM_JOINT_PITCH1] = {
-                /* Pos_mode 当前只编码目标位置与速度，Kp/Kd 不随控制帧发送。 */
-                .kp = 63.0f,
-                .kd = 0.07f,
-            },
-            [ARM_JOINT_PITCH2] = {
-                /* GO8010 将 Kp/Kd 分别编码为 K_pos/K_spd。 */
-                .kp = 1.0f,
-                .kd = 0.06f,
-            },
-            [ARM_JOINT_ROLL2] = {
-                .kp = 15.0f,
-                .kd = 0.01f,
-            },
-            [ARM_JOINT_PITCH3] = {
-                .kp = 15.0f,
-                .kd = 0.02f,
-            },
-            [ARM_JOINT_GRIP] = {
-                .kp = 18.0f,
-                .kd = 0.10f,
-            },
-        },
-        .roll3 = {
-            .angle = {
-                .kp = 10.0f,
-                .ki = 0.0f,
-                .kd = 0.0f,
-                .mode = PID_POSITIONAL_MODE,
-                .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT |
-                                     PID_IMPROVEMENT_INTEGRAL_LIMIT,
-                .improvement = {
-                    .output_min = -100.0f,
-                    .output_max = 100.0f,
-                    .integral_limit = 10.0f,
-                },
-                .initialized = true,
-                .last_status = PID_STATUS_OK,
-            },
-            .speed = {
-                .kp = 80.0f,
-                .ki = 0.0f,
-                .kd = 0.0f,
-                .mode = PID_POSITIONAL_MODE,
-                .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT |
-                                     PID_IMPROVEMENT_INTEGRAL_LIMIT,
-                .improvement = {
-                    .output_min = -15000.0f,
-                    .output_max = 15000.0f,
-                    .integral_limit = 500.0f,
-                },
-                .initialized = true,
-                .last_status = PID_STATUS_OK,
-            },
-        },
-    },
-    .control = {
-        .command = {
-            .enabled = false,
-            .mode = ARM_CONTROL_MODE_HOLD,
-            .action = ARM_PRESET_ACTION_NONE,
-        },
-        .previous_mode = ARM_CONTROL_MODE_HOLD,
-    },
+    .control = {.state = ARM_CONTROL_DISABLED},
 };
 
-static osThreadId_t g_arm_task_thread = NULL;
-static uint8_t g_next_damiao_motor_index = 0U;
-static uint32_t g_arm_task_start_time_ms = 0U;
-static ArmTaskCommand_t g_arm_task_pending_command = {
-    .enabled = false,
-    .mode = ARM_CONTROL_MODE_HOLD,
-    .action = ARM_PRESET_ACTION_NONE,
+/* 两个厂商各自保留驱动实例，不建立通用电机注册表或转发适配函数。 */
+static FDCAN_HandleTypeDef *const g_arm_dm_bus[ARM_DAMIAO_MOTOR_COUNT] = {
+    &hfdcan1, &hfdcan1, &hfdcan1, &hfdcan2, &hfdcan2, &hfdcan2,
 };
-
-static bool arm_task_time_reached(uint32_t now_ms, uint32_t deadline_ms)
-{
-    return (int32_t)(now_ms - deadline_ms) >= 0;
-}
-
-static bool arm_task_feedback_is_fresh(bool feedback_valid,
-                                       uint32_t last_feedback_time_ms,
-                                       uint32_t now_ms,
-                                       uint32_t timeout_ms)
-{
-    return feedback_valid &&
-           ((uint32_t)(now_ms - last_feedback_time_ms) <= timeout_ms);
-}
-
-static bool arm_task_damiao_state_matches_request(
-    const DM_Motor_Info_t *motor,
-    DM_Motor_State_e feedback_state)
-{
-    if (motor->Command.requested_enabled)
-    {
-        return feedback_state == DM_MOTOR_STATE_ENABLED;
-    }
-
-    return feedback_state == DM_MOTOR_STATE_DISABLED;
-}
-
-static ArmMotorLinkState_e arm_task_damiao_confirmed_state(
-    const DM_Motor_Info_t *motor)
-{
-    return motor->Command.requested_enabled
-               ? ARM_MOTOR_LINK_DM_ENABLED_CONFIRMED
-               : ARM_MOTOR_LINK_DM_DISABLED_CONFIRMED;
-}
-
-static bool arm_task_damiao_feedback_is_confirmed(
-    ArmMotorLinkState_e link_state)
-{
-    return (link_state == ARM_MOTOR_LINK_DM_DISABLED_CONFIRMED) ||
-           (link_state == ARM_MOTOR_LINK_DM_ENABLED_CONFIRMED) ||
-           (link_state == ARM_MOTOR_LINK_ONLINE);
-}
-
-static void arm_task_update_motor_link_state(uint32_t now_ms)
-{
-    uint32_t damiao_feedback_sequence[ARM_DAMIAO_MOTOR_COUNT];
-    uint32_t damiao_feedback_time_ms[ARM_DAMIAO_MOTOR_COUNT];
-    bool damiao_feedback_valid[ARM_DAMIAO_MOTOR_COUNT];
-    DM_Motor_State_e damiao_feedback_state[ARM_DAMIAO_MOTOR_COUNT];
-    bool roll3_feedback_valid;
-    uint32_t roll3_feedback_time_ms;
-    bool pitch2_feedback_valid;
-    uint32_t pitch2_feedback_time_ms;
-    uint32_t index;
-
-    /* 反馈由中断更新；一次性复制判定证据，避免混用不同帧的字段。 */
-    taskENTER_CRITICAL();
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        const DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
-
-        damiao_feedback_sequence[index] = motor->feedback_sequence;
-        damiao_feedback_time_ms[index] = motor->last_feedback_time_ms;
-        damiao_feedback_valid[index] = motor->feedback_valid;
-        damiao_feedback_state[index] = motor->Data.state;
-    }
-    roll3_feedback_valid = g_arm_task.roll3_motor.feedback_valid;
-    roll3_feedback_time_ms =
-        g_arm_task.roll3_motor.last_feedback_time_ms;
-    pitch2_feedback_valid =
-        g_arm_task.pitch2_motor.Data.feedback_valid;
-    pitch2_feedback_time_ms =
-        g_arm_task.pitch2_motor.Data.last_feedback_time_ms;
-    taskEXIT_CRITICAL();
-
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
-        ArmMotorLinkState_e *link_state =
-            &g_arm_task.motor_link_state[g_arm_damiao_joint_map[index]];
-        bool new_feedback =
-            damiao_feedback_sequence[index] !=
-            motor->Command.request_feedback_sequence;
-        bool state_matches = arm_task_damiao_state_matches_request(
-            motor,
-            damiao_feedback_state[index]);
-
-        if ((ARM_DAMIAO_INSTALLED_MASK & (1UL << index)) == 0U)
-        {
-            /* 未实装槽位不产生通信命令，也不属于在线健康检查对象。 */
-            motor->Command.pending = false;
-            motor->Command.awaiting_response = false;
-            motor->Command.failed = false;
-            *link_state = ARM_MOTOR_LINK_UNKNOWN;
-            continue;
-        }
-
-        if (motor->Command.awaiting_response)
-        {
-            if (new_feedback)
-            {
-                /* 统一反馈帧没有独立 ACK：消费新帧后必须用状态码确认
-                 * 使能(1)或失能(0)，不能把任意反馈都当成命令成功。
-                 */
-                motor->Command.request_feedback_sequence =
-                    damiao_feedback_sequence[index];
-                if (state_matches)
-                {
-                    motor->Command.awaiting_response = false;
-                    motor->Command.pending = false;
-                    motor->Command.failed = false;
-                    *link_state = arm_task_damiao_confirmed_state(motor);
-                }
-                else if (motor->Command.attempt_count >=
-                         ARM_DAMIAO_MAX_ATTEMPTS)
-                {
-                    motor->Command.awaiting_response = false;
-                    motor->Command.pending = false;
-                    motor->Command.failed = true;
-                    *link_state = ARM_MOTOR_LINK_DM_COMMAND_FAILED;
-                }
-                else
-                {
-                    motor->Command.pending = true;
-                    *link_state = ARM_MOTOR_LINK_UNKNOWN;
-                }
-            }
-            else if ((uint32_t)(now_ms - motor->Command.request_time_ms) >
-                     ARM_DAMIAO_RESPONSE_TIMEOUT_MS)
-            {
-                if (motor->Command.attempt_count >=
-                    ARM_DAMIAO_MAX_ATTEMPTS)
-                {
-                    motor->Command.awaiting_response = false;
-                    motor->Command.pending = false;
-                    motor->Command.failed = true;
-                    *link_state = ARM_MOTOR_LINK_DM_COMMAND_FAILED;
-                }
-                else
-                {
-                    motor->Command.pending = true;
-                    *link_state = ARM_MOTOR_LINK_UNKNOWN;
-                }
-            }
-            else
-            {
-                *link_state = ARM_MOTOR_LINK_UNKNOWN;
-            }
-        }
-        else if (motor->Command.failed)
-        {
-            /* 最后一次请求的迟到反馈只有状态匹配时才能解除异常。 */
-            if (new_feedback)
-            {
-                motor->Command.request_feedback_sequence =
-                    damiao_feedback_sequence[index];
-                if (state_matches)
-                {
-                    motor->Command.failed = false;
-                    motor->Command.pending = false;
-                    *link_state = arm_task_damiao_confirmed_state(motor);
-                }
-                else
-                {
-                    *link_state = ARM_MOTOR_LINK_DM_COMMAND_FAILED;
-                }
-            }
-            else
-            {
-                *link_state = ARM_MOTOR_LINK_DM_COMMAND_FAILED;
-            }
-        }
-        else
-        {
-            uint8_t control_mask = (uint8_t)(1UL << index);
-
-            if (!motor->Command.requested_enabled ||
-                ((g_arm_task.control.dm_control_started_mask & control_mask) ==
-                 0U))
-            {
-                continue;
-            }
-
-            if (damiao_feedback_valid[index] &&
-                (damiao_feedback_sequence[index] !=
-                 g_arm_task.control.dm_control_feedback_sequence[index]))
-            {
-                g_arm_task.control.dm_control_feedback_sequence[index] =
-                    damiao_feedback_sequence[index];
-                *link_state =
-                    (damiao_feedback_state[index] ==
-                     DM_MOTOR_STATE_ENABLED)
-                        ? ARM_MOTOR_LINK_ONLINE
-                        : ARM_MOTOR_LINK_OFFLINE;
-            }
-            else if ((*link_state == ARM_MOTOR_LINK_ONLINE) &&
-                     arm_task_feedback_is_fresh(
-                         damiao_feedback_valid[index],
-                         damiao_feedback_time_ms[index],
-                         now_ms,
-                         ARM_DAMIAO_CONTROL_TIMEOUT_MS))
-            {
-                /* A previously confirmed control link stays online while its
-                 * most recent response remains fresh. */
-            }
-            else if ((uint32_t)(
-                         now_ms -
-                         g_arm_task.control.dm_first_control_time_ms[index]) >
-                     ARM_DAMIAO_CONTROL_TIMEOUT_MS)
-            {
-                *link_state = ARM_MOTOR_LINK_OFFLINE;
-            }
-        }
-    }
-
-    if (!roll3_feedback_valid)
-    {
-        g_arm_task.motor_link_state[ARM_JOINT_ROLL3] =
-            ((uint32_t)(now_ms - g_arm_task_start_time_ms) >
-             ARM_DJI_FEEDBACK_TIMEOUT_MS)
-                ? ARM_MOTOR_LINK_OFFLINE
-                : ARM_MOTOR_LINK_UNKNOWN;
-    }
-    else if (arm_task_feedback_is_fresh(
-                 true,
-                 roll3_feedback_time_ms,
-                 now_ms,
-                 ARM_DJI_FEEDBACK_TIMEOUT_MS))
-    {
-        g_arm_task.motor_link_state[ARM_JOINT_ROLL3] =
-            ARM_MOTOR_LINK_ONLINE;
-    }
-    else
-    {
-        g_arm_task.motor_link_state[ARM_JOINT_ROLL3] =
-            ARM_MOTOR_LINK_OFFLINE;
-    }
-
-    if (!pitch2_feedback_valid)
-    {
-        g_arm_task.motor_link_state[ARM_JOINT_PITCH2] =
-            ((uint32_t)(now_ms - g_arm_task_start_time_ms) >
-             ARM_UNITREE_FEEDBACK_TIMEOUT_MS)
-                ? ARM_MOTOR_LINK_OFFLINE
-                : ARM_MOTOR_LINK_UNKNOWN;
-    }
-    else if (arm_task_feedback_is_fresh(
-                 true,
-                 pitch2_feedback_time_ms,
-                 now_ms,
-                 ARM_UNITREE_FEEDBACK_TIMEOUT_MS))
-    {
-        g_arm_task.motor_link_state[ARM_JOINT_PITCH2] =
-            ARM_MOTOR_LINK_ONLINE;
-    }
-    else
-    {
-        g_arm_task.motor_link_state[ARM_JOINT_PITCH2] =
-            ARM_MOTOR_LINK_OFFLINE;
-    }
-}
-
-static void arm_task_update_error(void)
-{
-    uint16_t dm_command_failed_mask = 0U;
-    uint16_t motor_lost_mask = 0U;
-    uint16_t motor_mask = 0U;
-    uint32_t index;
-    uint32_t joint;
-
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        if (((ARM_DAMIAO_INSTALLED_MASK & (1UL << index)) != 0U) &&
-            g_arm_task.damiao_motor[index].Command.failed)
-        {
-            dm_command_failed_mask |=
-                (uint16_t)(1UL << g_arm_damiao_joint_map[index]);
-        }
-    }
-
-    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-    {
-        if (((ARM_JOINT_INSTALLED_MASK & (1UL << joint)) != 0U) &&
-            (g_arm_task.motor_link_state[joint] == ARM_MOTOR_LINK_OFFLINE))
-        {
-            motor_lost_mask |= (uint16_t)(1UL << joint);
-        }
-    }
-
-    motor_mask = dm_command_failed_mask | motor_lost_mask;
-    g_arm_task.error.motor_mask = motor_mask;
-    if (dm_command_failed_mask != 0U)
-    {
-        g_arm_task.error.type = ARM_TASK_ERROR_DM_COMMAND_FAILED;
-    }
-    else if (motor_lost_mask != 0U)
-    {
-        g_arm_task.error.type = ARM_TASK_ERROR_MOTOR_LOST;
-    }
-    else
-    {
-        g_arm_task.error.type = ARM_TASK_ERROR_NONE;
-    }
-}
-
-static float arm_task_wrap_to_pi(float angle_rad)
-{
-    angle_rad = fmodf(angle_rad + ARM_PI_RAD, ARM_TWO_PI_RAD);
-    if (angle_rad < 0.0f)
-    {
-        angle_rad += ARM_TWO_PI_RAD;
-    }
-    return angle_rad - ARM_PI_RAD;
-}
-
-static void arm_task_store_joint_feedback(ArmJoint_e joint,
-                                          float output_angle_rad,
-                                          bool valid,
-                                          uint32_t sample_token)
-{
-    const ArmJointMapping_t *mapping;
-    ArmFeedbackJumpFilter_t *filter;
-    float joint_angle_rad;
-    float filtered_angle_rad;
-
-    if (joint >= ARM_JOINT_COUNT)
-    {
-        return;
-    }
-
-    mapping = &g_arm_joint_mapping[joint];
-    filter = &g_arm_task.control.feedback_filter[joint];
-    if (!valid)
-    {
-        ArmControlFilter_ResetFeedback(filter, sample_token);
-        g_arm_task.joint_feedback[joint].valid = false;
-        return;
-    }
-
-    joint_angle_rad =
-        mapping->direction * output_angle_rad - mapping->zero_rad;
-    if (mapping->wrap_to_pi)
-    {
-        joint_angle_rad = arm_task_wrap_to_pi(joint_angle_rad);
-    }
-
-    if (ArmControlFilter_UpdateFeedback(
-            filter,
-            joint_angle_rad,
-            sample_token,
-            ARM_FEEDBACK_JUMP_LIMIT_RAD,
-            mapping->wrap_to_pi,
-            &filtered_angle_rad))
-    {
-        g_arm_task.joint_feedback[joint].angle_rad = filtered_angle_rad;
-        g_arm_task.joint_feedback[joint].valid = true;
-    }
-    else
-    {
-        g_arm_task.joint_feedback[joint].valid = false;
-    }
-}
-
-static void arm_task_update_joint_feedback(void)
-{
-    const Unitree_Motor_Data_t *pitch2 = &g_arm_task.pitch2_motor.Data;
-
-    arm_task_store_joint_feedback(
-        ARM_JOINT_BIG_YAW,
-        g_arm_task.damiao_motor[ARM_DAMIAO_BIG_YAW].Data.pos,
-        arm_task_damiao_feedback_is_confirmed(
-            g_arm_task.motor_link_state[ARM_JOINT_BIG_YAW]),
-        g_arm_task.damiao_motor[ARM_DAMIAO_BIG_YAW].feedback_sequence);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_PITCH1,
-        g_arm_task.damiao_motor[ARM_DAMIAO_PITCH1].Data.pos,
-        arm_task_damiao_feedback_is_confirmed(
-            g_arm_task.motor_link_state[ARM_JOINT_PITCH1]),
-        g_arm_task.damiao_motor[ARM_DAMIAO_PITCH1].feedback_sequence);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_ROLL1,
-        g_arm_task.damiao_motor[ARM_DAMIAO_ROLL1].Data.pos,
-        arm_task_damiao_feedback_is_confirmed(
-            g_arm_task.motor_link_state[ARM_JOINT_ROLL1]),
-        g_arm_task.damiao_motor[ARM_DAMIAO_ROLL1].feedback_sequence);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_PITCH2,
-        pitch2->Pos - pitch2->Pos_Offset,
-        (g_arm_task.motor_link_state[ARM_JOINT_PITCH2] ==
-             ARM_MOTOR_LINK_ONLINE) &&
-            (pitch2->cnt >= 5U),
-        pitch2->last_feedback_time_ms);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_ROLL2,
-        g_arm_task.damiao_motor[ARM_DAMIAO_ROLL2].Data.pos,
-        arm_task_damiao_feedback_is_confirmed(
-            g_arm_task.motor_link_state[ARM_JOINT_ROLL2]),
-        g_arm_task.damiao_motor[ARM_DAMIAO_ROLL2].feedback_sequence);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_PITCH3,
-        g_arm_task.damiao_motor[ARM_DAMIAO_PITCH3].Data.pos,
-        arm_task_damiao_feedback_is_confirmed(
-            g_arm_task.motor_link_state[ARM_JOINT_PITCH3]),
-        g_arm_task.damiao_motor[ARM_DAMIAO_PITCH3].feedback_sequence);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_ROLL3,
-        (float)g_arm_task.roll3_motor.Data.Encoder * ARM_TWO_PI_RAD /
-            ARM_DJI_ENCODER_COUNTS_PER_TURN,
-        g_arm_task.motor_link_state[ARM_JOINT_ROLL3] ==
-            ARM_MOTOR_LINK_ONLINE,
-        g_arm_task.roll3_motor.last_feedback_time_ms);
-    arm_task_store_joint_feedback(
-        ARM_JOINT_GRIP,
-        g_arm_task.damiao_motor[ARM_DAMIAO_GRIP].Data.pos,
-        arm_task_damiao_feedback_is_confirmed(
-            g_arm_task.motor_link_state[ARM_JOINT_GRIP]),
-        g_arm_task.damiao_motor[ARM_DAMIAO_GRIP].feedback_sequence);
-}
-
-void ArmTask_OnCan1Rx(uint32_t identifier,
-                      uint8_t *data,
-                      uint32_t data_len)
-{
-    if (data == NULL)
-    {
-        return;
-    }
-
-    if (identifier == g_arm_task.roll3_motor.ID_Set.RxIdentifier)
-    {
-        DJI_Motor_Info_Update(&g_arm_task.roll3_motor, data, data_len);
-    }
-}
-
-void ArmTask_OnCan2Rx(uint32_t identifier,
-                      uint8_t *data,
-                      uint32_t data_len)
-{
-    uint32_t index;
-
-    if (data == NULL)
-    {
-        return;
-    }
-
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
-
-        if (identifier == motor->ID_Set.RxIdentifier)
-        {
-            DM_Motor_Info_Update(motor, data, data_len);
-            return;
-        }
-    }
-}
-
-void ArmTask_OnUsart10Rx(const uint8_t *data, uint16_t data_len)
-{
-    (void)Unitree_Motor_Info_Update(
-        &g_arm_task.pitch2_motor,
-        data,
-        data_len);
-}
-
-static void arm_task_process_enable_state(bool enabled, uint32_t now_ms)
-{
-    bool command_changed = false;
-    uint32_t offset;
-
-    for (offset = 0U; offset < ARM_DAMIAO_MOTOR_COUNT; offset++)
-    {
-        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[offset];
-
-        if ((ARM_DAMIAO_INSTALLED_MASK & (1UL << offset)) == 0U)
-        {
-            continue;
-        }
-
-        if (enabled != motor->Command.requested_enabled)
-        {
-            motor->Command.requested_enabled = enabled;
-            motor->Command.pending = true;
-            motor->Command.awaiting_response = false;
-            motor->Command.failed = false;
-            motor->Command.attempt_count = 0U;
-            motor->Command.next_retry_time_ms = now_ms;
-            taskENTER_CRITICAL();
-            motor->Command.request_feedback_sequence =
-                motor->feedback_sequence;
-            taskEXIT_CRITICAL();
-            g_arm_task.motor_link_state[g_arm_damiao_joint_map[offset]] =
-                ARM_MOTOR_LINK_UNKNOWN;
-            command_changed = true;
-        }
-    }
-    if (command_changed)
-    {
-        g_next_damiao_motor_index = 0U;
-        g_arm_task.control.dm_control_started_mask = 0U;
-        g_arm_task.control.target_initialized = false;
-        g_arm_task.control.hold.initialized = false;
-        g_arm_task.control.control_active = false;
-        (void)pid_reset(&g_arm_task.pid.roll3.angle);
-        (void)pid_reset(&g_arm_task.pid.roll3.speed);
-    }
-
-    for (offset = 0U; offset < ARM_DAMIAO_MOTOR_COUNT; offset++)
-    {
-        uint32_t index =
-            (g_next_damiao_motor_index + offset) %
-            ARM_DAMIAO_MOTOR_COUNT;
-        uint8_t send_result;
-        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
-
-        if ((ARM_DAMIAO_INSTALLED_MASK & (1UL << index)) == 0U)
-        {
-            continue;
-        }
-
-        if (!motor->Command.pending ||
-            !arm_task_time_reached(now_ms,
-                                   motor->Command.next_retry_time_ms))
-        {
-            continue;
-        }
-
-        motor->Command.attempt_count++;
-        if (motor->Command.requested_enabled)
-        {
-            send_result = DM_Enable_Motor(&hfdcan2,
-                                          (uint16_t)motor->ID_Set.TxIdentifier,
-                                          (uint16_t)motor->Mode,
-                                          0U);
-        }
-        else
-        {
-            send_result = DM_Disable_Motor(&hfdcan2,
-                                           (uint16_t)motor->ID_Set.TxIdentifier,
-                                           (uint16_t)motor->Mode,
-                                           0U);
-        }
-
-        g_arm_task.debug.damiao.result_valid = true;
-        g_arm_task.debug.damiao.command_enabled = enabled;
-        g_arm_task.debug.damiao.motor = (ArmDamiaoMotor_e)index;
-        g_arm_task.debug.damiao.return_value = send_result;
-
-        if (send_result == 0U)
-        {
-            /* request_feedback_sequence 只在消费反馈时前移。重试发送不能
-             * 覆盖确认基线，否则会吞掉恰好在重试前到达的有效反馈。
-             */
-            motor->Command.pending = false;
-            motor->Command.awaiting_response = true;
-            motor->Command.request_time_ms = now_ms;
-            motor->Command.next_retry_time_ms =
-                now_ms + ARM_DAMIAO_RETRY_INTERVAL_MS;
-            g_arm_task.motor_link_state[g_arm_damiao_joint_map[index]] =
-                ARM_MOTOR_LINK_UNKNOWN;
-        }
-        else if (motor->Command.attempt_count >= ARM_DAMIAO_MAX_ATTEMPTS)
-        {
-            motor->Command.pending = false;
-            motor->Command.awaiting_response = false;
-            motor->Command.failed = true;
-            g_arm_task.motor_link_state[g_arm_damiao_joint_map[index]] =
-                ARM_MOTOR_LINK_DM_COMMAND_FAILED;
-        }
-        else
-        {
-            motor->Command.next_retry_time_ms =
-                now_ms + ARM_DAMIAO_RETRY_INTERVAL_MS;
-            g_arm_task.motor_link_state[g_arm_damiao_joint_map[index]] =
-                ARM_MOTOR_LINK_UNKNOWN;
-        }
-        g_next_damiao_motor_index =
-            (uint8_t)((index + 1U) % ARM_DAMIAO_MOTOR_COUNT);
-        return;
-    }
-}
-
-static float arm_task_clamp_float(float value, float minimum, float maximum)
-{
-    if (value < minimum)
-    {
-        return minimum;
-    }
-    if (value > maximum)
-    {
-        return maximum;
-    }
-    return value;
-}
-
-static float arm_task_limit_joint_target(ArmJoint_e joint,
-                                         float target_rad)
-{
-    if ((joint == ARM_JOINT_PITCH1) &&
-        (target_rad < ARM_PITCH1_TARGET_MIN_RAD))
-    {
-        return ARM_PITCH1_TARGET_MIN_RAD;
-    }
-    return target_rad;
-}
-
-static bool arm_task_joint_is_installed(ArmJoint_e joint)
-{
-    return (joint < ARM_JOINT_COUNT) &&
-           ((ARM_JOINT_INSTALLED_MASK & (1UL << joint)) != 0U);
-}
-
-static float arm_task_joint_velocity_rad_s(ArmJoint_e joint)
-{
-    uint32_t index;
-
-    if (joint == ARM_JOINT_PITCH2)
-    {
-        return g_arm_joint_mapping[joint].direction *
-               g_arm_task.pitch2_motor.Data.Vel;
-    }
-    if (joint == ARM_JOINT_ROLL3)
-    {
-        return g_arm_joint_mapping[joint].direction *
-               (float)g_arm_task.roll3_motor.Data.Velocity *
-               ARM_TWO_PI_RAD / 60.0f;
-    }
-
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        if (g_arm_damiao_joint_map[index] == joint)
-        {
-            return g_arm_joint_mapping[joint].direction *
-                   g_arm_task.damiao_motor[index].Data.vel;
-        }
-    }
-
-    return 0.0f;
-}
-
-static void arm_task_capture_joint_targets(void)
-{
-    uint32_t joint;
-
-    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-    {
-        if (arm_task_joint_is_installed((ArmJoint_e)joint) &&
-            g_arm_task.joint_feedback[joint].valid)
-        {
-            g_arm_task.control.desired_joint_target_rad[joint] =
-                g_arm_task.joint_feedback[joint].angle_rad;
-            g_arm_task.control.joint_target_rad[joint] =
-                g_arm_task.joint_feedback[joint].angle_rad;
-        }
-    }
-    g_arm_task.control.target_initialized = true;
-}
-
-static void arm_task_reset_custom_control_state(void)
-{
-    ArmCustomControlState_t *custom = &g_arm_task.control.custom;
-
-    custom->initialized = false;
-    ArmCustomGrip_Reset(&custom->grip);
-}
-
-static void arm_task_update_custom_targets(
-    const ArmTaskCommand_t *command)
-{
-    ArmCustomControlState_t *custom = &g_arm_task.control.custom;
-    const CustomControllerSnapshot_t *input =
-        &command->custom_controller;
-    uint32_t input_joint;
-
-    if (!custom->initialized)
-    {
-        if (!g_arm_task.control.target_initialized)
-        {
-            arm_task_capture_joint_targets();
-        }
-        custom->initialized = true;
-    }
-
-    if (!input->online)
-    {
-        uint32_t joint;
-
-        /* 离线进入或运行中掉线都立即保持各轴当前已应用目标。 */
-        for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-        {
-            if (arm_task_joint_is_installed((ArmJoint_e)joint))
-            {
-                g_arm_task.control.desired_joint_target_rad[joint] =
-                    g_arm_task.control.joint_target_rad[joint];
-            }
-        }
-    }
-    else
-    {
-        for (input_joint = 0U;
-             input_joint < CUSTOM_CONTROLLER_JOINT_COUNT;
-             input_joint++)
-        {
-            ArmJoint_e joint = g_arm_custom_joint_map[input_joint];
-
-            if (arm_task_joint_is_installed(joint))
-            {
-                g_arm_task.control.desired_joint_target_rad[joint] =
-                    input->joint_target_rad[input_joint];
-            }
-        }
-    }
-
-    (void)ArmCustomGrip_Update(
-        &custom->grip,
-        input->online,
-        input->button_pressed,
-        g_arm_task.control.joint_target_rad[ARM_JOINT_GRIP],
-        g_arm_task.control.desired_joint_target_rad[ARM_JOINT_GRIP],
-        ARM_CUSTOM_GRIP_TARGET_STEP_RAD,
-        ARM_GRIP_TARGET_MIN_RAD,
-        ARM_GRIP_TARGET_MAX_RAD,
-        &g_arm_task.control.desired_joint_target_rad[ARM_JOINT_GRIP]);
-}
-
-static const ArmPose_t *arm_task_get_preset_pose(ArmPresetAction_e action)
-{
-    switch (action)
-    {
-        case ARM_PRESET_ACTION_NORMAL:
-            return &g_arm_pose_normal;
-        case ARM_PRESET_ACTION_WAVE_1:
-            return &g_arm_pose_wave_1;
-        case ARM_PRESET_ACTION_WAVE_2:
-            return &g_arm_pose_wave_2;
-        case ARM_PRESET_ACTION_CUSTOM_1:
-            return &g_arm_pose_custom_1;
-        case ARM_PRESET_ACTION_NONE:
-        default:
-            return NULL;
-    }
-}
-
-static void arm_task_update_preset_targets(
-    const ArmTaskCommand_t *command)
-{
-    const ArmPose_t *pose;
-    uint32_t joint;
-
-    if (command->action_sequence !=
-        g_arm_task.control.consumed_action_sequence)
-    {
-        g_arm_task.control.consumed_action_sequence =
-            command->action_sequence;
-        g_arm_task.control.active_action = command->action;
-    }
-
-    pose = arm_task_get_preset_pose(g_arm_task.control.active_action);
-    if (pose == NULL)
-    {
-        return;
-    }
-
-    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-    {
-        if (!arm_task_joint_is_installed((ArmJoint_e)joint))
-        {
-            continue;
-        }
-        if ((joint == ARM_JOINT_GRIP) &&
-            g_arm_task.joint_feedback[joint].valid)
-        {
-            float channel_ratio =
-                (float)remote_ctrl.rc.ch[3] / (float)RC_CH_VALUE_MAX;
-            float grip_step_rad =
-                channel_ratio * ARM_JOINT_TARGET_STEP_RAD *
-                ARM_GRIP_CONTROL_SENSITIVITY;
-
-            /* 夹爪不使用姿态表目标，ch[3] 仅以低灵敏度增量控制。 */
-            g_arm_task.control.desired_joint_target_rad[joint] =
-                arm_task_clamp_float(
-                    g_arm_task.control.desired_joint_target_rad[joint] +
-                        grip_step_rad,
-                    ARM_GRIP_TARGET_MIN_RAD,
-                    ARM_GRIP_TARGET_MAX_RAD);
-            continue;
-        }
-        g_arm_task.control.desired_joint_target_rad[joint] =
-            pose->joint_rad[joint];
-    }
-}
-
-static void arm_task_update_hold_targets(uint32_t now_ms)
-{
-    uint32_t joint;
-
-    if (!g_arm_task.control.hold.initialized)
-    {
-        arm_task_capture_joint_targets();
-        for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-        {
-            g_arm_task.control.hold.moving[joint] = false;
-            g_arm_task.control.hold.settle_start_time_ms[joint] = 0U;
-        }
-        g_arm_task.control.hold.initialized = true;
-    }
-
-    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-    {
-        float speed_rad_s;
-
-        if (!arm_task_joint_is_installed((ArmJoint_e)joint) ||
-            !g_arm_task.joint_feedback[joint].valid)
-        {
-            continue;
-        }
-
-        speed_rad_s = fabsf(
-            arm_task_joint_velocity_rad_s((ArmJoint_e)joint));
-        if (speed_rad_s >= ARM_HOLD_MOVING_THRESHOLD_RAD_S)
-        {
-            g_arm_task.control.hold.moving[joint] = true;
-            g_arm_task.control.hold.settle_start_time_ms[joint] = 0U;
-            g_arm_task.control.desired_joint_target_rad[joint] =
-                g_arm_task.joint_feedback[joint].angle_rad;
-            continue;
-        }
-
-        if (!g_arm_task.control.hold.moving[joint])
-        {
-            continue;
-        }
-
-        g_arm_task.control.desired_joint_target_rad[joint] =
-            g_arm_task.joint_feedback[joint].angle_rad;
-        if (g_arm_task.control.hold.settle_start_time_ms[joint] == 0U)
-        {
-            g_arm_task.control.hold.settle_start_time_ms[joint] = now_ms;
-        }
-        else if ((uint32_t)(
-                     now_ms -
-                     g_arm_task.control.hold.settle_start_time_ms[joint]) >=
-                 ARM_HOLD_SETTLE_TIME_MS)
-        {
-            g_arm_task.control.hold.moving[joint] = false;
-            g_arm_task.control.hold.settle_start_time_ms[joint] = 0U;
-        }
-    }
-}
-
-static void arm_task_update_target_ramps(ArmControlMode_e mode)
-{
-    uint32_t joint;
-
-    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-    {
-        if (!arm_task_joint_is_installed((ArmJoint_e)joint))
-        {
-            continue;
-        }
-
-        g_arm_task.control.desired_joint_target_rad[joint] =
-            arm_task_limit_joint_target(
-                (ArmJoint_e)joint,
-                g_arm_task.control.desired_joint_target_rad[joint]);
-
-        if ((joint == ARM_JOINT_GRIP) &&
-            (mode != ARM_CONTROL_MODE_CUSTOM))
-        {
-            /* 夹爪已经通过遥控灵敏度限幅，不再叠加关节斜坡。 */
-            g_arm_task.control.joint_target_rad[joint] =
-                g_arm_task.control.desired_joint_target_rad[joint];
-            continue;
-        }
-
-        float ramped_target_rad =
-            g_arm_task.control.joint_target_rad[joint];
-        float maximum_step_rad =
-            (mode == ARM_CONTROL_MODE_CUSTOM)
-                ? ARM_CUSTOM_JOINT_TARGET_STEP_RAD
-                : ARM_JOINT_TARGET_STEP_RAD;
-
-        if ((mode == ARM_CONTROL_MODE_CUSTOM) &&
-            (joint == ARM_JOINT_GRIP))
-        {
-            maximum_step_rad = ARM_CUSTOM_GRIP_TARGET_STEP_RAD;
-        }
-
-        if (ArmControlFilter_SlewAngle(
-                g_arm_task.control.joint_target_rad[joint],
-                g_arm_task.control.desired_joint_target_rad[joint],
-                maximum_step_rad,
-                joint == ARM_JOINT_ROLL3,
-                &ramped_target_rad))
-        {
-            g_arm_task.control.joint_target_rad[joint] =
-                ramped_target_rad;
-        }
-    }
-}
-
-static void arm_task_update_control_targets(
-    const ArmTaskCommand_t *command,
-    uint32_t now_ms)
-{
-    if (command->freeze_targets)
-    {
-        if (!g_arm_task.control.targets_frozen)
-        {
-            uint32_t joint;
-
-            if (!g_arm_task.control.target_initialized)
-            {
-                arm_task_capture_joint_targets();
-            }
-            /* 冻结当前已应用目标，不跟随反馈，也不进入手扶HOLD逻辑。 */
-            for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-            {
-                if (arm_task_joint_is_installed((ArmJoint_e)joint))
-                {
-                    g_arm_task.control.desired_joint_target_rad[joint] =
-                        g_arm_task.control.joint_target_rad[joint];
-                }
-            }
-            g_arm_task.control.hold.initialized = false;
-            g_arm_task.control.targets_frozen = true;
-        }
-        g_arm_task.control.desired_joint_target_rad[ARM_JOINT_PITCH1] =
-            arm_task_limit_joint_target(
-                ARM_JOINT_PITCH1,
-                g_arm_task.control
-                    .desired_joint_target_rad[ARM_JOINT_PITCH1]);
-        arm_task_update_target_ramps(command->mode);
-        return;
-    }
-
-    if (g_arm_task.control.targets_frozen)
-    {
-        g_arm_task.control.targets_frozen = false;
-        g_arm_task.control.hold.initialized = false;
-    }
-
-    if (command->mode != g_arm_task.control.previous_mode)
-    {
-        g_arm_task.control.previous_mode = command->mode;
-        g_arm_task.control.hold.initialized = false;
-        arm_task_reset_custom_control_state();
-        if (command->mode == ARM_CONTROL_MODE_PRESET)
-        {
-            /* Entering PRESET never replays the previously selected action. */
-            g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
-        }
-    }
-
-    if (command->mode == ARM_CONTROL_MODE_HOLD)
-    {
-        arm_task_update_hold_targets(now_ms);
-    }
-    else if (command->mode == ARM_CONTROL_MODE_CUSTOM)
-    {
-        g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
-        arm_task_update_custom_targets(command);
-    }
-    else
-    {
-        arm_task_update_preset_targets(command);
-        if ((g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE) &&
-            !g_arm_task.control.target_initialized)
-        {
-            arm_task_capture_joint_targets();
-            arm_task_update_preset_targets(command);
-        }
-    }
-
-    if ((command->mode == ARM_CONTROL_MODE_HOLD) ||
-        (command->mode == ARM_CONTROL_MODE_CUSTOM) ||
-        (g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE))
-    {
-        arm_task_update_target_ramps(command->mode);
-    }
-}
-
-static bool arm_task_joint_to_motor_target(ArmJoint_e joint,
-                                           float joint_target_rad,
-                                           float *motor_target_rad)
-{
-    const ArmJointMapping_t *mapping;
-
-    if ((joint >= ARM_JOINT_COUNT) || (motor_target_rad == NULL))
-    {
-        return false;
-    }
-
-    mapping = &g_arm_joint_mapping[joint];
-    joint_target_rad = arm_task_limit_joint_target(joint,
-                                                    joint_target_rad);
-    *motor_target_rad =
-        mapping->direction * (joint_target_rad + mapping->zero_rad);
-    if (joint == ARM_JOINT_PITCH2)
-    {
-        *motor_target_rad += g_arm_task.pitch2_motor.Data.Pos_Offset;
-    }
-    return true;
-}
-
-static ArmGravityOutput_t arm_task_calculate_gravity(void)
-{
-    ArmGravityInput_t input;
-    ArmGravityOutput_t output = {0};
-
-    if (!g_arm_task.joint_feedback[ARM_JOINT_PITCH1].valid ||
-        !g_arm_task.joint_feedback[ARM_JOINT_PITCH2].valid ||
-        !g_arm_task.joint_feedback[ARM_JOINT_ROLL2].valid ||
-        !g_arm_task.joint_feedback[ARM_JOINT_PITCH3].valid)
-    {
-        return output;
-    }
-
-    input.pitch1_rad =
-        g_arm_task.joint_feedback[ARM_JOINT_PITCH1].angle_rad;
-    input.pitch2_rad =
-        g_arm_task.joint_feedback[ARM_JOINT_PITCH2].angle_rad;
-    input.roll2_rad =
-        g_arm_task.joint_feedback[ARM_JOINT_ROLL2].angle_rad;
-    input.pitch3_rad =
-        g_arm_task.joint_feedback[ARM_JOINT_PITCH3].angle_rad;
-    if (!ArmGravityCompensation_Calculate(&input, &output))
-    {
-        return (ArmGravityOutput_t){0};
-    }
-
-    output.pitch2_torque_nm = arm_task_clamp_float(
-        output.pitch2_torque_nm,
-        ARM_PITCH2_TORQUE_MIN_NM,
-        ARM_PITCH2_TORQUE_MAX_NM);
-    return output;
-}
-
-static bool arm_task_all_motors_ready(const ArmTaskCommand_t *command)
-{
-    uint32_t index;
-    uint32_t joint;
-
-    if (!command->enabled ||
-        (g_arm_task.motor_link_state[ARM_JOINT_PITCH2] !=
-         ARM_MOTOR_LINK_ONLINE) ||
-        (g_arm_task.motor_link_state[ARM_JOINT_ROLL3] !=
-         ARM_MOTOR_LINK_ONLINE))
-    {
-        return false;
-    }
-
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        ArmMotorLinkState_e state;
-
-        if ((ARM_DAMIAO_INSTALLED_MASK & (1UL << index)) == 0U)
-        {
-            continue;
-        }
-        state = g_arm_task.motor_link_state[g_arm_damiao_joint_map[index]];
-        if ((state != ARM_MOTOR_LINK_DM_ENABLED_CONFIRMED) &&
-            (state != ARM_MOTOR_LINK_ONLINE))
-        {
-            return false;
-        }
-    }
-
-    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
-    {
-        if (arm_task_joint_is_installed((ArmJoint_e)joint) &&
-            !g_arm_task.joint_feedback[joint].valid)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-static int16_t arm_task_compute_roll3_current(void)
-{
-    float feedback_rad =
-        g_arm_task.joint_feedback[ARM_JOINT_ROLL3].angle_rad;
-    float target_rad = g_arm_task.control
-                           .joint_target_rad[ARM_JOINT_ROLL3];
-    float nearest_target_rad =
-        feedback_rad + arm_task_wrap_to_pi(target_rad - feedback_rad);
-    float target_speed_rpm = 0.0f;
-    float current_command = 0.0f;
-
-    if (pid_compute(&g_arm_task.pid.roll3.angle,
-                    nearest_target_rad * 180.0f / ARM_PI_RAD,
-                    feedback_rad * 180.0f / ARM_PI_RAD,
-                    ARM_TASK_PERIOD_S,
-                    &target_speed_rpm) != PID_STATUS_OK)
-    {
-        return 0;
-    }
-    if (pid_compute(&g_arm_task.pid.roll3.speed,
-                    target_speed_rpm,
-                    (float)g_arm_task.roll3_motor.Data.Velocity,
-                    ARM_TASK_PERIOD_S,
-                    &current_command) != PID_STATUS_OK)
-    {
-        return 0;
-    }
-
-    current_command = arm_task_clamp_float(
-        current_command,
-        -15000.0f,
-        15000.0f);
-    return (int16_t)current_command;
-}
-
-static void arm_task_record_can2_result(uint8_t send_result)
-{
-    g_arm_task.debug.can2_send_count++;
-    if (send_result != 0U)
-    {
-        g_arm_task.debug.can2_send_failure_count++;
-    }
-}
-
-static void arm_task_mark_dm_control_started(uint32_t index,
-                                             uint32_t now_ms)
-{
-    uint8_t control_mask = (uint8_t)(1UL << index);
-
-    if ((g_arm_task.control.dm_control_started_mask & control_mask) != 0U)
-    {
-        return;
-    }
-
-    taskENTER_CRITICAL();
-    g_arm_task.control.dm_control_feedback_sequence[index] =
-        g_arm_task.damiao_motor[index].feedback_sequence;
-    taskEXIT_CRITICAL();
-    g_arm_task.control.dm_first_control_time_ms[index] = now_ms;
-    g_arm_task.control.dm_control_started_mask |= control_mask;
-}
-
-static float arm_task_damiao_torque_feedforward(
-    ArmJoint_e joint,
-    const ArmGravityOutput_t *gravity)
-{
-    switch (joint)
-    {
-        case ARM_JOINT_ROLL2:
-            return gravity->roll2_torque_nm;
-        case ARM_JOINT_PITCH3:
-            return gravity->pitch3_torque_nm;
-        case ARM_JOINT_PITCH1:
-            /* Source behavior: calculate Pitch1 gravity but do not apply it. */
-        default:
-            return 0.0f;
-    }
-}
-
-static void arm_task_send_can2_control(bool control_allowed,
-                                        bool target_control_active,
-                                        const ArmGravityOutput_t *gravity,
-                                        int16_t roll3_current,
-                                        uint32_t now_ms)
-{
-    int16_t roll3_group_current[4] = {0, 0, 0, 0};
-    uint32_t index;
-
-    if (g_arm_task.control.can2_send_initialized &&
-        ((uint32_t)(now_ms -
-                    g_arm_task.control.last_can2_send_time_ms) <
-         ARM_CAN2_SEND_PERIOD_MS))
-    {
-        return;
-    }
-    g_arm_task.control.last_can2_send_time_ms = now_ms;
-    g_arm_task.control.can2_send_initialized = true;
-
-    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
-    {
-        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
-        ArmJoint_e joint = g_arm_damiao_joint_map[index];
-        float motor_target_rad = 0.0f;
-        float motor_target_velocity_rad_s = 0.0f;
-        float kp = 0.0f;
-        float kd = 0.0f;
-        float torque_ff = 0.0f;
-        uint8_t send_result;
-
-        if ((ARM_DAMIAO_INSTALLED_MASK & (1UL << index)) == 0U)
-        {
-            continue;
-        }
-        if (motor->Command.pending || motor->Command.awaiting_response ||
-            motor->Command.failed)
-        {
-            continue;
-        }
-
-        /* DOWN/失能状态也发送零控制 MIT 观测帧，维持达妙一发一收。 */
-        if (control_allowed && target_control_active)
-        {
-            (void)arm_task_joint_to_motor_target(
-                joint,
-                g_arm_task.control.joint_target_rad[joint],
-                &motor_target_rad);
-            if (joint == ARM_JOINT_PITCH1)
-            {
-                /* Pos_mode 的 v_des 是位置梯形规划的最大速度。 */
-                motor_target_velocity_rad_s = 0.8f;
-            }
-            kp = g_arm_task.pid.motor_internal[joint].kp;
-            kd = g_arm_task.pid.motor_internal[joint].kd;
-            torque_ff = arm_task_damiao_torque_feedforward(
-                joint,
-                gravity);
-        }
-
-        /*
-         * 无有效位置目标时发送零控制 MIT 观测帧，维持达妙一发一收：
-         * 位置、速度、Kp、Kd 和 torque_ff 均为 0，不使用预设目标。
-         * PRESET动作、HOLD、CUSTOM或掉线冻结有效时才装载位置参数。
-         */
-        send_result = DM_Motor_Ctrl(
-            &hfdcan2,
-            motor,
-            motor_target_rad,
-            motor_target_velocity_rad_s,
-            kp,
-            kd,
-            torque_ff,
-            0U);
-        arm_task_record_can2_result(send_result);
-        if (send_result == 0U)
-        {
-            arm_task_mark_dm_control_started(index, now_ms);
-        }
-    }
-
-    if (control_allowed && !target_control_active)
-    {
-        /* GM6020 持续上报反馈，不需要用发送帧维持观测。 */
-        return;
-    }
-
-    roll3_group_current[0] = control_allowed ? roll3_current : 0;
-    g_arm_task.debug.roll3_can_return_value =
-        DJI_Motor_SendGroupCurrent(
-            &hfdcan1,
-            g_arm_task.roll3_motor.ID_Set.TxIdentifier,
-            roll3_group_current);
-    arm_task_record_can2_result(
-        g_arm_task.debug.roll3_can_return_value);
-}
-
-static void arm_task_send_pitch2_control(
-    bool control_allowed,
-    bool target_control_active,
-    const ArmGravityOutput_t *gravity)
-{
-    float motor_target_rad = 0.0f;
-    float kp = 0.0f;
-    float kd = 0.0f;
-    float torque_ff = 0.0f;
-
-    if (control_allowed && target_control_active)
-    {
-        (void)arm_task_joint_to_motor_target(
-            ARM_JOINT_PITCH2,
-            g_arm_task.control.joint_target_rad[ARM_JOINT_PITCH2],
-            &motor_target_rad);
-        kp = g_arm_task.pid.motor_internal[ARM_JOINT_PITCH2].kp;
-        kd = g_arm_task.pid.motor_internal[ARM_JOINT_PITCH2].kd;
-        torque_ff = gravity->pitch2_torque_nm;
-    }
-
-    Unitree_Motor_Cmd(
-        &g_arm_task.pitch2_motor,
-        (control_allowed && target_control_active)
-            ? UNITREE_MODE_FOC
-            : UNITREE_MODE_LOCK,
-        torque_ff,
-        0.0f,
-        motor_target_rad,
-        kp,
-        kd);
-    g_arm_task.debug.pitch2_uart_return_value =
-        Unitree_Motor_Ctrl(&huart10, &g_arm_task.pitch2_motor);
-}
-
-static void arm_task_deactivate_control(const ArmTaskCommand_t *command)
-{
-    if (g_arm_task.control.control_active)
-    {
-        (void)pid_reset(&g_arm_task.pid.roll3.angle);
-        (void)pid_reset(&g_arm_task.pid.roll3.speed);
-    }
-    g_arm_task.control.control_active = false;
-    g_arm_task.control.target_initialized = false;
-    g_arm_task.control.targets_frozen = false;
-    g_arm_task.control.hold.initialized = false;
-    arm_task_reset_custom_control_state();
-    g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
-    g_arm_task.control.previous_mode = command->mode;
-    g_arm_task.control.consumed_action_sequence =
-        command->action_sequence;
-}
-
-static void arm_task_step(void)
-{
-    const ArmTaskCommand_t *command = &g_arm_task.control.command;
-    uint32_t now_ms = DWT_GetTimeMs();
-    ArmGravityOutput_t gravity = {0};
-    bool control_allowed;
-    bool target_control_active;
-    int16_t roll3_current = 0;
-
-    BSP_USART10_RecoverRxIfPending();
-    arm_task_update_motor_link_state(now_ms);
-    arm_task_process_enable_state(command->enabled, now_ms);
-    arm_task_update_error();
-    arm_task_update_joint_feedback();
-
-    /* 故障只上报；已经运行的控制链不因故障状态被动停控。 */
-    control_allowed = command->enabled &&
-                      (g_arm_task.control.control_active ||
-                       arm_task_all_motors_ready(command));
-    if (control_allowed)
-    {
-        if (!g_arm_task.control.control_active)
-        {
-            (void)pid_reset(&g_arm_task.pid.roll3.angle);
-            (void)pid_reset(&g_arm_task.pid.roll3.speed);
-            g_arm_task.control.target_initialized = false;
-            g_arm_task.control.targets_frozen = false;
-            g_arm_task.control.hold.initialized = false;
-            arm_task_reset_custom_control_state();
-            g_arm_task.control.active_action = ARM_PRESET_ACTION_NONE;
-            g_arm_task.control.control_active = true;
-        }
-
-        arm_task_update_control_targets(command, now_ms);
-        gravity = arm_task_calculate_gravity();
-        roll3_current = arm_task_compute_roll3_current();
-    }
-    else
-    {
-        arm_task_deactivate_control(command);
-    }
-
-    target_control_active =
-        command->freeze_targets ||
-        (command->mode == ARM_CONTROL_MODE_HOLD) ||
-        (command->mode == ARM_CONTROL_MODE_CUSTOM) ||
-        (g_arm_task.control.active_action != ARM_PRESET_ACTION_NONE);
-
-    arm_task_send_pitch2_control(
-        control_allowed,
-        target_control_active,
-        &gravity);
-    arm_task_send_can2_control(
-        control_allowed,
-        target_control_active,
-        &gravity,
-        roll3_current,
-        now_ms);
-
-    (void)LedSystem_SetFault(
-        LED_SYSTEM_FAULT_ARM_MOTOR_ERROR,
-        g_arm_task.error.type != ARM_TASK_ERROR_NONE);
-}
+static ArmTaskCommand_t g_arm_input;
+static uint32_t g_arm_enable_sequence[ARM_JOINT_COUNT];
+static uint32_t g_arm_start_time_ms;
+static uint32_t g_arm_management_time_ms;
+static uint32_t g_arm_enable_time_ms;
+static bool g_arm_management_started;
+static bool g_arm_previous_enabled;
+static uint16_t g_arm_enable_sent_mask;
 
 void ArmTask_Notify(const ArmTaskCommand_t *command)
 {
-    if ((command == NULL) || (g_arm_task_thread == NULL) ||
-        ((command->mode != ARM_CONTROL_MODE_PRESET) &&
-         (command->mode != ARM_CONTROL_MODE_HOLD) &&
-         (command->mode != ARM_CONTROL_MODE_CUSTOM)) ||
-        (command->action > ARM_PRESET_ACTION_CUSTOM_1))
+    if (command == NULL)
     {
         return;
     }
+    taskENTER_CRITICAL();
+    g_arm_input = *command;
+    taskEXIT_CRITICAL();
+}
+
+void ArmTask_OnCanRx(FDCAN_HandleTypeDef *hcan,
+                      const FDCAN_RxHeaderTypeDef *header,
+                      const uint8_t *data, uint32_t data_length)
+{
+    uint32_t index;
+    uint32_t first;
+
+    if ((hcan == NULL) || (header == NULL) || (data == NULL) ||
+        (data_length != 8U) || (header->DataLength != FDCAN_DLC_BYTES_8) ||
+        (header->IdType != FDCAN_STANDARD_ID) ||
+        (header->RxFrameType != FDCAN_DATA_FRAME) ||
+        (header->FDFormat != FDCAN_CLASSIC_CAN) ||
+        (header->BitRateSwitch != FDCAN_BRS_OFF))
+    {
+        return;
+    }
+    if (hcan == &hfdcan3)
+    {
+        for (index = 0U; index < ARM_RS05_MOTOR_COUNT; index++)
+        {
+            (void)RS05_Motor_OnRx(&g_arm_task.rs05_motor[index], header, data,
+                                  data_length, DWT_GetTimeMs());
+        }
+        return;
+    }
+    if ((hcan != &hfdcan1) && (hcan != &hfdcan2))
+    {
+        return;
+    }
+    first = hcan == &hfdcan1 ? 0U : 3U;
+    for (index = first; index < first + 3U; index++)
+    {
+        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
+        if (header->Identifier != motor->ID_Set.RxIdentifier)
+        {
+            continue;
+        }
+        if ((data[0] & 0x0FU) == motor->ID_Set.TxIdentifier)
+        {
+            DM_Motor_Info_Update(motor, data, header->DataLength);
+        }
+        return;
+    }
+}
+
+/** @brief 在同一临界区提取本周期运动反馈，不持锁发送 CAN。 */
+static uint32_t arm_task_snapshot_feedback(void)
+{
+    uint32_t index;
+    uint32_t now_ms;
 
     taskENTER_CRITICAL();
-    g_arm_task_pending_command = *command;
+    /* 同步取时，避免 tick 边界上的新反馈时间晚于 owner 先前取到的 now。 */
+    now_ms = DWT_GetTimeMs();
+    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
+    {
+        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
+        ArmJointFeedback_t *feedback = &g_arm_task.joint_feedback[index];
+        if (motor->feedback_valid &&
+            ((uint32_t)(now_ms - motor->last_feedback_time_ms) > ARM_FEEDBACK_TIMEOUT_MS))
+        {
+            motor->feedback_valid = false;
+        }
+        feedback->angle_rad = motor->Data.pos;
+        feedback->velocity_rad_s = motor->Data.vel;
+        feedback->torque_nm = motor->Data.tor;
+        feedback->received_time_ms = motor->last_feedback_time_ms;
+        feedback->sequence = motor->feedback_sequence;
+        feedback->state = (uint8_t)motor->Data.state;
+        feedback->valid = motor->feedback_valid;
+        feedback->fault = motor->feedback_valid &&
+            (motor->Data.state != DM_MOTOR_STATE_DISABLED) &&
+            (motor->Data.state != DM_MOTOR_STATE_ENABLED);
+    }
+    for (index = 0U; index < ARM_RS05_MOTOR_COUNT; index++)
+    {
+        RS05_Motor_Info_t *motor = &g_arm_task.rs05_motor[index];
+        ArmJointFeedback_t *feedback =
+            &g_arm_task.joint_feedback[ARM_JOINT_ROLL3 + index];
+        if (motor->feedback.valid &&
+            ((uint32_t)(now_ms - motor->feedback.last_update_ms) > ARM_FEEDBACK_TIMEOUT_MS))
+        {
+            motor->feedback.valid = false;
+        }
+        feedback->angle_rad = motor->feedback.data.position_rad;
+        feedback->velocity_rad_s = motor->feedback.data.velocity_rad_s;
+        feedback->torque_nm = motor->feedback.data.torque_nm;
+        feedback->received_time_ms = motor->feedback.last_update_ms;
+        feedback->sequence = motor->feedback.sequence;
+        feedback->state = motor->feedback.data.state;
+        feedback->valid = motor->feedback.valid;
+        feedback->fault = motor->feedback.valid && motor->feedback.data.fault;
+    }
     taskEXIT_CRITICAL();
-    (void)osThreadFlagsSet(g_arm_task_thread, ARM_TASK_NOTIFY_COMMAND);
+    return now_ms;
+}
+
+/** @brief 聚合全部电机健康状态；DM 的使能码 1 与 RS05 的运行码 2 分别判断。 */
+static uint16_t arm_task_feedback_gate(uint32_t now_ms, ArmTaskError_e *reason)
+{
+    uint16_t mask = 0U;
+    uint32_t joint;
+    bool starting = (uint32_t)(now_ms - g_arm_start_time_ms) <= ARM_FEEDBACK_TIMEOUT_MS;
+
+    *reason = ARM_TASK_ERROR_MOTOR_LOST;
+    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+    {
+        const ArmJointFeedback_t *feedback = &g_arm_task.joint_feedback[joint];
+        uint8_t running_state = joint < ARM_DAMIAO_MOTOR_COUNT ? 1U : 2U;
+        bool fresh = feedback->valid &&
+            ((uint32_t)(now_ms - feedback->received_time_ms) <= ARM_FEEDBACK_TIMEOUT_MS);
+
+        if (!fresh)
+        {
+            g_arm_task.motor_link_state[joint] = starting
+                ? ARM_MOTOR_LINK_UNKNOWN : ARM_MOTOR_LINK_OFFLINE;
+            if (!starting || (g_arm_task.control.state != ARM_CONTROL_DISABLED))
+            {
+                mask |= (uint16_t)(1UL << joint);
+            }
+        }
+        else if (feedback->fault || !isfinite(feedback->angle_rad) ||
+                 !isfinite(feedback->velocity_rad_s) || !isfinite(feedback->torque_nm) ||
+                 ((g_arm_task.control.state == ARM_CONTROL_ACTIVE) &&
+                  (feedback->state != running_state)))
+        {
+            g_arm_task.motor_link_state[joint] = ARM_MOTOR_LINK_ERROR;
+            mask |= (uint16_t)(1UL << joint);
+            *reason = ARM_TASK_ERROR_MOTOR_FAULT;
+        }
+        else
+        {
+            g_arm_task.motor_link_state[joint] = feedback->state == running_state
+                ? ARM_MOTOR_LINK_ENABLED
+                : (feedback->state == 0U ? ARM_MOTOR_LINK_DISABLED : ARM_MOTOR_LINK_ONLINE);
+        }
+    }
+    return mask;
+}
+
+/** @brief 整臂失能的真实硬件边界；即使某一路失败，仍尝试其他所有电机。 */
+static uint16_t arm_task_disable_all(void)
+{
+    uint32_t index;
+    uint16_t failed = 0U;
+
+    for (index = 0U; index < ARM_DAMIAO_MOTOR_COUNT; index++)
+    {
+        DM_Motor_Info_t *motor = &g_arm_task.damiao_motor[index];
+        if (DM_Disable_Motor(g_arm_dm_bus[index],
+                             (uint16_t)motor->ID_Set.TxIdentifier, Mit_mode, 0U) != 0U)
+        {
+            failed |= (uint16_t)(1UL << index);
+        }
+    }
+    for (index = 0U; index < ARM_RS05_MOTOR_COUNT; index++)
+    {
+        if (RS05_Motor_Disable(&hfdcan3, &g_arm_task.rs05_motor[index]) != RS05_MOTOR_OK)
+        {
+            failed |= (uint16_t)(1UL << (ARM_JOINT_ROLL3 + index));
+        }
+    }
+    return failed;
+}
+
+/**
+ * @brief 失能时周期下发失能命令，探测运动反馈。
+ * @note RS05 已提前配置好运控模式，本任务不设置或读取运行模式。
+ *       每次最多每路 CAN 3 帧，分开于正常 1 ms 运控，无阻塞等待。
+ */
+static void arm_task_manage_disabled(uint32_t now_ms, bool force)
+{
+    uint16_t failed;
+
+    if (!force && g_arm_management_started &&
+        ((uint32_t)(now_ms - g_arm_management_time_ms) < ARM_MANAGEMENT_PERIOD_MS))
+    {
+        return;
+    }
+    g_arm_management_started = true;
+    g_arm_management_time_ms = now_ms;
+    failed = arm_task_disable_all();
+    if (failed != 0U)
+    {
+        g_arm_task.error.type = ARM_TASK_ERROR_SEND_FAILED;
+        g_arm_task.error.motor_mask = failed;
+    }
+}
+
+/** @brief 只有八轴反馈新鲜、无故障且确认停止，才接受新的使能边沿。 */
+static uint16_t arm_task_not_ready_mask(uint32_t now_ms)
+{
+    uint32_t joint;
+    uint16_t mask = 0U;
+
+    taskENTER_CRITICAL();
+    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+    {
+        const ArmJointFeedback_t *feedback = &g_arm_task.joint_feedback[joint];
+        if (!feedback->valid || feedback->fault ||
+            (feedback->state != 0U) ||
+            ((uint32_t)(now_ms - feedback->received_time_ms) > ARM_FEEDBACK_TIMEOUT_MS))
+        {
+            mask |= (uint16_t)(1UL << joint);
+        }
+    }
+    taskEXIT_CRITICAL();
+    return mask;
+}
+
+/** @brief 逐轴发送使能并等待本次请求之后的新运行反馈；不靠 HAL_OK 推断使能。 */
+static uint16_t arm_task_enable_pending(uint32_t now_ms, uint16_t *confirmed)
+{
+    uint32_t joint;
+    uint16_t failed = 0U;
+    bool send_due = !g_arm_management_started ||
+        ((uint32_t)(now_ms - g_arm_management_time_ms) >= ARM_MANAGEMENT_PERIOD_MS);
+
+    *confirmed = 0U;
+    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+    {
+        const ArmJointFeedback_t *feedback = &g_arm_task.joint_feedback[joint];
+        uint16_t bit = (uint16_t)(1UL << joint);
+        uint8_t running_state = joint < ARM_DAMIAO_MOTOR_COUNT ? 1U : 2U;
+        if (((g_arm_enable_sent_mask & bit) != 0U) && feedback->valid &&
+            (feedback->sequence != g_arm_enable_sequence[joint]) &&
+            (feedback->state == running_state))
+        {
+            *confirmed |= bit;
+            continue;
+        }
+        if (!send_due)
+        {
+            continue;
+        }
+        if (joint < ARM_DAMIAO_MOTOR_COUNT)
+        {
+            if (DM_Enable_Motor(g_arm_dm_bus[joint],
+                                (uint16_t)g_arm_task.damiao_motor[joint].ID_Set.TxIdentifier,
+                                Mit_mode, 0U) != 0U)
+            {
+                failed |= bit;
+                continue;
+            }
+        }
+        else if (RS05_Motor_Enable(&hfdcan3,
+                    &g_arm_task.rs05_motor[joint - ARM_JOINT_ROLL3]) != RS05_MOTOR_OK)
+        {
+            failed |= bit;
+            continue;
+        }
+        g_arm_enable_sent_mask |= bit;
+    }
+    if (send_due)
+    {
+        g_arm_management_started = true;
+        g_arm_management_time_ms = now_ms;
+    }
+    return failed;
+}
+
+/**
+ * @brief 每周期先校验八轴目标，再由厂商驱动限幅并下发 MIT 帧。
+ * @note 速度和前馈力矩均为 0；本模块不计算 PD，不增加产品力矩上限。
+ */
+static uint16_t arm_task_send_motion(bool freeze_targets, ArmTaskError_e *reason)
+{
+    float target[ARM_JOINT_COUNT];
+    float kp[ARM_JOINT_COUNT];
+    float kd[ARM_JOINT_COUNT];
+    uint16_t failed = 0U;
+    uint32_t joint;
+
+    *reason = ARM_TASK_ERROR_COMMAND_INVALID;
+    /* BEGIN Keil 目标调试入口：新控制器协议未接入，首版逐轴在调试器修改目标。
+     * 范围仅目标来源；新控制器目标输入正式接入后，替换此处的直接目标读取。
+     * 增益仍作为电机内部运控参数保存，H7 不计算 PD。
+     */
+    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+    {
+        target[joint] = freeze_targets ? g_arm_task.control.applied_target_rad[joint]
+                                      : g_arm_task.control.joint_target_rad[joint];
+        kp[joint] = g_arm_task.control.mit_gain[joint].kp;
+        kd[joint] = g_arm_task.control.mit_gain[joint].kd;
+        if (!isfinite(target[joint]) || !isfinite(kp[joint]) || !isfinite(kd[joint]))
+        {
+            failed |= (uint16_t)(1UL << joint);
+        }
+    }
+    /* END Keil 目标调试入口。 */
+    if (failed != 0U)
+    {
+        return failed;
+    }
+    *reason = ARM_TASK_ERROR_SEND_FAILED;
+    for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+    {
+        bool sent;
+        if (joint < ARM_DAMIAO_MOTOR_COUNT)
+        {
+            DM_Motor_MitCommand_t applied;
+            sent = DM_Motor_Ctrl(g_arm_dm_bus[joint], &g_arm_task.damiao_motor[joint],
+                                 target[joint], 0.0f, kp[joint], kd[joint], 0.0f, 0U, &applied) == 0U;
+            if (sent)
+            {
+                target[joint] = applied.pos;
+                kp[joint] = applied.kp;
+                kd[joint] = applied.kd;
+            }
+        }
+        else
+        {
+            RS05_Motor_MotionCommand_t applied;
+            RS05_Motor_Status_e status = RS05_Motor_ControlMotion(&hfdcan3,
+                &g_arm_task.rs05_motor[joint - ARM_JOINT_ROLL3],
+                target[joint], 0.0f, kp[joint], kd[joint], 0.0f, &applied);
+            sent = (status == RS05_MOTOR_OK) || (status == RS05_MOTOR_CLAMPED);
+            if (sent)
+            {
+                target[joint] = applied.position_rad;
+                kp[joint] = applied.kp;
+                kd[joint] = applied.kd;
+            }
+        }
+        if (!sent)
+        {
+            failed |= (uint16_t)(1UL << joint);
+            break;
+        }
+        g_arm_task.control.applied_target_rad[joint] = target[joint];
+        /* 回写钳位/冻结后的目标，恢复 RC 时不回放掉线期间的 Keil 目标修改。 */
+        g_arm_task.control.joint_target_rad[joint] = target[joint];
+        /* 驱动已成功提交本帧，调试器中的增益同步为协议限幅后的值。 */
+        g_arm_task.control.mit_gain[joint].kp = kp[joint];
+        g_arm_task.control.mit_gain[joint].kd = kd[joint];
+    }
+    return failed;
+}
+
+/** @brief 一个完整控制周期；全局故障锁存只在看到遥控失能命令后解除。 */
+static void arm_task_control_step(const ArmTaskCommand_t *input, uint32_t now_ms)
+{
+    ArmTaskError_e reason;
+    uint16_t unhealthy = arm_task_feedback_gate(now_ms, &reason);
+    uint16_t failed = 0U;
+    bool enable_edge = input->enabled && !g_arm_previous_enabled;
+    bool force_disable = false;
+    uint32_t joint;
+
+    g_arm_previous_enabled = input->enabled;
+    if (!input->enabled)
+    {
+        force_disable = g_arm_task.control.state != ARM_CONTROL_DISABLED;
+        g_arm_task.control.state = ARM_CONTROL_DISABLED;
+        g_arm_task.control.fault_latched = false;
+    }
+    else if (unhealthy != 0U)
+    {
+        g_arm_task.error.type = reason;
+        g_arm_task.error.motor_mask = unhealthy;
+        force_disable = g_arm_task.control.state != ARM_CONTROL_DISABLED;
+        g_arm_task.control.state = ARM_CONTROL_DISABLED;
+        g_arm_task.control.fault_latched = true;
+    }
+    else if (enable_edge && !g_arm_task.control.fault_latched)
+    {
+        failed = arm_task_not_ready_mask(now_ms);
+        if (failed != 0U)
+        {
+            reason = ARM_TASK_ERROR_NOT_READY;
+        }
+        else
+        {
+            for (joint = 0U; joint < ARM_JOINT_COUNT; joint++)
+            {
+                float angle = g_arm_task.joint_feedback[joint].angle_rad;
+                g_arm_task.control.joint_target_rad[joint] = angle;
+                g_arm_task.control.applied_target_rad[joint] = angle;
+                g_arm_enable_sequence[joint] = g_arm_task.joint_feedback[joint].sequence;
+            }
+            g_arm_enable_sent_mask = 0U;
+            g_arm_enable_time_ms = now_ms;
+            g_arm_management_started = false;
+            g_arm_task.control.state = ARM_CONTROL_ENABLING;
+            g_arm_task.error.type = ARM_TASK_ERROR_NONE;
+            g_arm_task.error.motor_mask = 0U;
+        }
+    }
+
+    if ((failed == 0U) && (g_arm_task.control.state == ARM_CONTROL_ENABLING))
+    {
+        uint16_t confirmed;
+        failed = arm_task_enable_pending(now_ms, &confirmed);
+        reason = ARM_TASK_ERROR_SEND_FAILED;
+        if (confirmed == ARM_ALL_MOTORS_MASK)
+        {
+            g_arm_task.control.state = ARM_CONTROL_ACTIVE;
+        }
+        else if ((uint32_t)(now_ms - g_arm_enable_time_ms) > ARM_FEEDBACK_TIMEOUT_MS)
+        {
+            failed = (uint16_t)(ARM_ALL_MOTORS_MASK & (uint16_t)~confirmed);
+            reason = ARM_TASK_ERROR_ENABLE_TIMEOUT;
+        }
+    }
+    if ((failed == 0U) && (g_arm_task.control.state == ARM_CONTROL_ACTIVE))
+    {
+        failed = arm_task_send_motion(input->freeze_targets, &reason);
+    }
+    if (failed != 0U)
+    {
+        g_arm_task.error.type = reason;
+        g_arm_task.error.motor_mask = failed;
+        g_arm_task.control.fault_latched = true;
+        g_arm_task.control.state = ARM_CONTROL_DISABLED;
+        force_disable = true;
+    }
+    if (g_arm_task.control.state == ARM_CONTROL_DISABLED)
+    {
+        arm_task_manage_disabled(now_ms, force_disable);
+        if (!input->enabled && (unhealthy != 0U))
+        {
+            g_arm_task.error.type = reason;
+            g_arm_task.error.motor_mask = unhealthy;
+        }
+    }
+    (void)LedSystem_SetFault(LED_SYSTEM_FAULT_ARM_MOTOR_ERROR,
+        g_arm_task.control.fault_latched || (unhealthy != 0U));
 }
 
 void ArmTask_Run(void)
 {
-    uint32_t notification;
+    TickType_t wake_time = xTaskGetTickCount();
+    ArmTaskCommand_t input;
+    uint32_t now_ms;
 
-    g_arm_task_thread = osThreadGetId();
-    g_arm_task_start_time_ms = DWT_GetTimeMs();
-
+    g_arm_start_time_ms = DWT_GetTimeMs();
     for (;;)
     {
-        /* Two missed InputTask periods retain the latest complete command.
-         * The power-on local snapshot remains disabled until the first input.
-         */
-        notification = osThreadFlagsWait(ARM_TASK_NOTIFY_COMMAND,
-                                         osFlagsWaitAny,
-                                         2U);
-        if ((notification & osFlagsError) == 0U)
-        {
-            taskENTER_CRITICAL();
-            g_arm_task.control.command = g_arm_task_pending_command;
-            taskEXIT_CRITICAL();
-        }
-        arm_task_step();
+        taskENTER_CRITICAL();
+        input = g_arm_input;
+        taskEXIT_CRITICAL();
+        now_ms = arm_task_snapshot_feedback();
+        arm_task_control_step(&input, now_ms);
+        vTaskDelayUntil(&wake_time, pdMS_TO_TICKS(ARM_TASK_PERIOD_MS));
     }
 }
+#endif /* ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM */

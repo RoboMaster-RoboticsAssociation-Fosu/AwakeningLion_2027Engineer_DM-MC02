@@ -33,8 +33,7 @@ extern "C" {
 #endif
 
 void BSP_USART_Init(void);
-/** @brief 在 ArmTask 上下文恢复 USART10 GO8010 DMA 接收。 */
-void BSP_USART10_RecoverRxIfPending(void);
+
 
 #ifdef __cplusplus
 }

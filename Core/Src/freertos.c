@@ -26,10 +26,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "robot_board_config.h"
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
 #include "arm_task.h"
+#else
 #include "chassis_task.h"
-#include "input_task.h"
 #include "ins_task.h"
+#endif
+#include "input_task.h"
 #include "service_task.h"
 /* USER CODE END Includes */
 
@@ -50,7 +54,32 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
+/* 板型专属任务由用户代码持有，CubeMX 仅生成公共任务，重生成时保留本区域。 */
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
+/* Definitions for INS_TASK */
+osThreadId_t INS_TASKHandle;
+const osThreadAttr_t INS_TASK_attributes = {
+  .name = "INS_TASK",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 
+/* Definitions for chassisTask */
+osThreadId_t chassisTaskHandle;
+const osThreadAttr_t chassisTask_attributes = {
+  .name = "chassisTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+#else
+/* Definitions for armTask */
+osThreadId_t armTaskHandle;
+const osThreadAttr_t armTask_attributes = {
+  .name = "armTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityHigh,
+};
+#endif
 /* USER CODE END Variables */
 /* Definitions for serviceTask */
 osThreadId_t serviceTaskHandle;
@@ -59,45 +88,26 @@ const osThreadAttr_t serviceTask_attributes = {
   .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for INS_TASK */
-osThreadId_t INS_TASKHandle;
-const osThreadAttr_t INS_TASK_attributes = {
-  .name = "INS_TASK",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityLow,
-};
 /* Definitions for inputTask */
 osThreadId_t inputTaskHandle;
 const osThreadAttr_t inputTask_attributes = {
   .name = "inputTask",
-  .stack_size = 256 * 4,
+  .stack_size = 512 * 4,
   .priority = (osPriority_t) osPriorityRealtime,
-};
-/* Definitions for chassisTask */
-osThreadId_t chassisTaskHandle;
-const osThreadAttr_t chassisTask_attributes = {
-  .name = "chassisTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
-};
-/* Definitions for armTask */
-osThreadId_t armTaskHandle;
-const osThreadAttr_t armTask_attributes = {
-  .name = "armTask",
-  .stack_size = 512 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
 };
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
-
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
+void INS_Task(void *argument);
+void StartChassisTask(void *argument);
+#else
+void StartArmTask(void *argument);
+#endif
 /* USER CODE END FunctionPrototypes */
 
 void StartServiceTask(void *argument);
-void INS_Task(void *argument);
 void StartInputTask(void *argument);
-void StartChassisTask(void *argument);
-void StartArmTask(void *argument);
 
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -132,20 +142,17 @@ void MX_FREERTOS_Init(void) {
   /* creation of serviceTask */
   serviceTaskHandle = osThreadNew(StartServiceTask, NULL, &serviceTask_attributes);
 
-  /* creation of INS_TASK */
-  INS_TASKHandle = osThreadNew(INS_Task, NULL, &INS_TASK_attributes);
-
   /* creation of inputTask */
   inputTaskHandle = osThreadNew(StartInputTask, NULL, &inputTask_attributes);
 
-  /* creation of chassisTask */
-  chassisTaskHandle = osThreadNew(StartChassisTask, NULL, &chassisTask_attributes);
-
-  /* creation of armTask */
-  armTaskHandle = osThreadNew(StartArmTask, NULL, &armTask_attributes);
-
   /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
+  /* 板型专属任务只在当前板创建；声明、属性和入口均位于 CubeMX 保留区域。 */
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
+  INS_TASKHandle = osThreadNew(INS_Task, NULL, &INS_TASK_attributes);
+  chassisTaskHandle = osThreadNew(StartChassisTask, NULL, &chassisTask_attributes);
+#else
+  armTaskHandle = osThreadNew(StartArmTask, NULL, &armTask_attributes);
+#endif
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
@@ -172,27 +179,6 @@ void StartServiceTask(void *argument)
   /* USER CODE END StartServiceTask */
 }
 
-/* USER CODE BEGIN Header_INS_Task */
-/**
-* @brief Function implementing the INS_TASK thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_INS_Task */
-void INS_Task(void *argument)
-{
-  /* USER CODE BEGIN INS_Task */
-  (void)argument;
-
-  /* Infinite loop */
-  for(;;)
-  {
-    //InsTask_Run();
-    osDelay(9999);
-  }
-  /* USER CODE END INS_Task */
-}
-
 /* USER CODE BEGIN Header_StartInputTask */
 /**
 * @brief Function implementing the inputTask thread.
@@ -209,40 +195,41 @@ void StartInputTask(void *argument)
   /* USER CODE END StartInputTask */
 }
 
-/* USER CODE BEGIN Header_StartChassisTask */
+/* Private application code --------------------------------------------------*/
+/* USER CODE BEGIN Application */
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
 /**
-* @brief Function implementing the chassisTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartChassisTask */
+ * @brief 底盘板 INS 任务入口，将 CMSIS 线程参数转换为现有运行入口。
+ * @param argument 未使用；运行入口返回时结束本线程。
+ */
+void INS_Task(void *argument)
+{
+  (void)argument;
+  InsTask_Run();
+  osThreadExit();
+}
+
+/**
+ * @brief 底盘板控制任务入口；本函数整体位于 CubeMX 保留区域。
+ * @param argument 未使用；运行入口返回时结束本线程。
+ */
 void StartChassisTask(void *argument)
 {
-  /* USER CODE BEGIN StartChassisTask */
   (void)argument;
   ChassisTask_Run();
   osThreadExit();
-  /* USER CODE END StartChassisTask */
 }
-
-/* USER CODE BEGIN Header_StartArmTask */
+#else
 /**
-* @brief Function implementing the armTask thread.
-* @param argument: Not used
-* @retval None
-*/
-/* USER CODE END Header_StartArmTask */
+ * @brief 机械臂板控制任务入口；本函数整体位于 CubeMX 保留区域。
+ * @param argument 未使用；运行入口返回时结束本线程。
+ */
 void StartArmTask(void *argument)
 {
-  /* USER CODE BEGIN StartArmTask */
   (void)argument;
   ArmTask_Run();
   osThreadExit();
-  /* USER CODE END StartArmTask */
 }
-
-/* Private application code --------------------------------------------------*/
-/* USER CODE BEGIN Application */
-
+#endif
 /* USER CODE END Application */
 

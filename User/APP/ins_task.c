@@ -13,6 +13,9 @@
 
 /* Includes ---------------------------------------------------------------- */
 #include "ins_task.h"
+#include "robot_board_config.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "controller.h"
 #include "QuaternionEKF.h"
 #include "bsp_dwt.h"
@@ -24,6 +27,8 @@
 
 /* Global variable --------------------------------------------------------- */
 INS_t INS;						// 姿态信息结构体变量
+
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
 
 struct MAHONY_FILTER_t mahony;		// Mahony滤波器结构体
 Axis3f Gyro,Accel;					// 陀螺仪和加速度计数据
@@ -64,6 +69,7 @@ void InsTask_Run(void)
 {
 	 InsTask_Init();
 	 
+	 INS_t updated = INS;
 	 while(1)
 	 {	
 		uint32_t now_ms;
@@ -74,15 +80,15 @@ void InsTask_Run(void)
 
 		BMI088_Read(&BMI088);
 
-		INS.Accel[X] = BMI088.Accel[X];
-		INS.Accel[Y] = BMI088.Accel[Y];
-		INS.Accel[Z] = BMI088.Accel[Z];
+		updated.Accel[X] = BMI088.Accel[X];
+		updated.Accel[Y] = BMI088.Accel[Y];
+		updated.Accel[Z] = BMI088.Accel[Z];
 		Accel.x=BMI088.Accel[0];
 		Accel.y=BMI088.Accel[1];
 		Accel.z=BMI088.Accel[2];
-		INS.Gyro[X] = BMI088.Gyro[X];
-		INS.Gyro[Y] = BMI088.Gyro[Y];
-		INS.Gyro[Z] = BMI088.Gyro[Z];
+		updated.Gyro[X] = BMI088.Gyro[X];
+		updated.Gyro[Y] = BMI088.Gyro[Y];
+		updated.Gyro[Z] = BMI088.Gyro[Z];
 		Gyro.x=BMI088.Gyro[0];
 		Gyro.y=BMI088.Gyro[1];
 		Gyro.z=BMI088.Gyro[2];
@@ -92,69 +98,73 @@ void InsTask_Run(void)
 		mahony_output(&mahony);
 		RotationMatrix_update(&mahony);
 				
-		INS.q[0]=mahony.q0;
-		INS.q[1]=mahony.q1;
-		INS.q[2]=mahony.q2;
-		INS.q[3]=mahony.q3;
+		updated.q[0]=mahony.q0;
+		updated.q[1]=mahony.q1;
+		updated.q[2]=mahony.q2;
+		updated.q[3]=mahony.q3;
 
 		/* 预热期也持续发布姿态，但由 ins_flag 阻止控制任务提前使用。 */
-		INS.Roll=mahony.pitch;
-		INS.Pitch=mahony.roll;
-		INS.Yaw=mahony.yaw;
+		updated.Roll=mahony.pitch;
+		updated.Pitch=mahony.roll;
+		updated.Yaw=mahony.yaw;
 	   
 	  // 将重力从大地坐标系n转换到机体坐标系b，用于从加速度计数据中减去重力加速度，得到运动加速度
 		float gravity_b[3];
-		EarthFrameToBodyFrame(gravity, gravity_b, INS.q);
+		EarthFrameToBodyFrame(gravity, gravity_b, updated.q);
 		for (uint8_t i = 0; i < 3; i++) { // 同时对三个轴进行低通滤波
-		  INS.MotionAccel_b[i] = (INS.Accel[i] - gravity_b[i]) * ins_dt / (INS.AccelLPF + ins_dt) 
-										+ INS.MotionAccel_b[i] * INS.AccelLPF / (INS.AccelLPF + ins_dt); 
-//		  INS.MotionAccel_b[i] = (INS.Accel[i] ) * dt / (INS.AccelLPF + dt) 
-//										+ INS.MotionAccel_b[i] * INS.AccelLPF / (INS.AccelLPF + dt);			
+		  updated.MotionAccel_b[i] = (updated.Accel[i] - gravity_b[i]) * ins_dt / (updated.AccelLPF + ins_dt)
+										+ updated.MotionAccel_b[i] * updated.AccelLPF / (updated.AccelLPF + ins_dt);
+//		  updated.MotionAccel_b[i] = (updated.Accel[i] ) * dt / (updated.AccelLPF + dt)
+//										+ updated.MotionAccel_b[i] * updated.AccelLPF / (updated.AccelLPF + dt);
 		}
-		BodyFrameToEarthFrame(INS.MotionAccel_b, INS.MotionAccel_n, INS.q); // 转换回大地坐标系n
+		BodyFrameToEarthFrame(updated.MotionAccel_b, updated.MotionAccel_n, updated.q); // 转换回大地坐标系n
 		
 		//零点漂移
-		if(fabsf(INS.MotionAccel_n[0])<0.02f) {
-		  INS.MotionAccel_n[0]=0.0f;	//x轴
+		if(fabsf(updated.MotionAccel_n[0])<0.02f) {
+		  updated.MotionAccel_n[0]=0.0f;	//x轴
 		}
-		if(fabsf(INS.MotionAccel_n[1])<0.02f) {
-		  INS.MotionAccel_n[1]=0.0f;	//y轴
+		if(fabsf(updated.MotionAccel_n[1])<0.02f) {
+		  updated.MotionAccel_n[1]=0.0f;	//y轴
 		}
-		if(fabsf(INS.MotionAccel_n[2])<0.04f) {
-		  INS.MotionAccel_n[2]=0.0f;//z轴
+		if(fabsf(updated.MotionAccel_n[2])<0.04f) {
+		  updated.MotionAccel_n[2]=0.0f;//z轴
 		  stop_time++;
 		}
 //		if(stop_time>10)
 //		{//静止10ms
 //		  	stop_time=0;
-//			INS.v_n=0.0f;
+//			updated.v_n=0.0f;
 //		}
 			
 		now_ms = DWT_GetTimeMs();
 		if ((uint32_t)(now_ms - ins_warmup_start_ms) >= INS_WARMUP_TIME_MS) {
-			INS.v_n=INS.v_n+INS.MotionAccel_n[1]*0.001f;
-		  	INS.x_n=INS.x_n+INS.v_n*0.001f;
+			updated.v_n=updated.v_n+updated.MotionAccel_n[1]*0.001f;
+			updated.x_n=updated.x_n+updated.v_n*0.001f;
 
-			if (INS.ins_flag == 0U)
+			if (updated.ins_flag == 0U)
 			{
 				/* 预热结束时从当前偏航角开始计圈，忽略收敛过程中的跨界。 */
-				INS.YawRoundCount = 0.0f;
-				INS.YawAngleLast = INS.Yaw;
-				INS.YawTotalAngle = INS.Yaw;
-				INS.ins_flag = 1U;
+				updated.YawRoundCount = 0.0f;
+				updated.YawAngleLast = updated.Yaw;
+				updated.YawTotalAngle = updated.Yaw;
+				updated.ins_flag = 1U;
 			}
-			else if (INS.Yaw - INS.YawAngleLast > 3.1415926f)
+			else if (updated.Yaw - updated.YawAngleLast > 3.1415926f)
 			{
-				INS.YawRoundCount--;
+				updated.YawRoundCount--;
 			}
-			else if (INS.Yaw - INS.YawAngleLast < -3.1415926f)
+			else if (updated.Yaw - updated.YawAngleLast < -3.1415926f)
 			{
-				INS.YawRoundCount++;
+				updated.YawRoundCount++;
 			}
-			INS.YawTotalAngle = 6.283f* INS.YawRoundCount + INS.Yaw;
-			INS.YawAngleLast = INS.Yaw;
+			updated.YawTotalAngle = 6.283f* updated.YawRoundCount + updated.Yaw;
+			updated.YawAngleLast = updated.Yaw;
 		}
-		INS.last_update_time_ms = now_ms;
+		updated.last_update_time_ms = now_ms;
+		taskENTER_CRITICAL();
+		/* 只发布完成的一整周期，防止高优先级转发任务读取半更新姿态。 */
+		INS = updated;
+		taskEXIT_CRITICAL();
 		
 		osDelay(1);
 	}
@@ -211,3 +221,5 @@ void EarthFrameToBodyFrame(const float *vecEF, float *vecBF, float *q)
 
 
 /* ------------------------------------------------------------------------- */
+
+#endif /* ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS */

@@ -1,7 +1,7 @@
 /**
  ******************************************************************************
  * @file    vofa_system.h
- * @brief   自定义控制器固定VOFA观测接口。
+ * @brief   本板控制任务的固定 VOFA 观测接口。
  ******************************************************************************
  */
 
@@ -13,7 +13,7 @@ typedef enum
 {
     /**
      * @brief 机械臂全部机构关节反馈角。
-     * @note I0..I7依次对应ArmJoint_e，单位均为rad；包含未安装的roll1槽位。
+     * @note I0..I7依次对应ArmJoint_e，单位均为rad；8 轴全部安装，包含 Roll1。
      */
     VOFA_VIEW_ARM_JOINT_ANGLES = 0,
 
@@ -40,24 +40,16 @@ typedef enum
     /**
      * @brief 机械臂全部关节的电机链路状态。
      * @note I0..I7依次对应ArmJoint_e；0 UNKNOWN、1 ONLINE、2 OFFLINE、
-     *       3 DM_DISABLED_CONFIRMED、4 DM_ENABLED_CONFIRMED、
-     *       5 DM_COMMAND_FAILED。
+     *       3 DISABLED、4 ENABLED、5 ERROR。
      */
     VOFA_VIEW_ARM_MOTOR_LINK_STATE,
 
     /**
      * @brief 已安装机械臂关节的反馈角与实际下发目标对比。
-     * @note 按big_yaw、pitch1、pitch2、roll2、pitch3、roll3、grip排列，
-     *       每轴占相邻2通道：反馈rad、目标rad，共14通道。
+     * @note 按 Yaw、Pitch1、Roll1、Pitch2、Roll2、Pitch3、Roll3、夹爪排列，
+     *       每轴占相邻 2 通道：反馈 rad、实际下发目标 rad，共 16 通道。
      */
     VOFA_VIEW_ARM_CONTROL_ANGLES,
-
-    /**
-     * @brief 自定义控制器接收快照。
-     * @note I0为在线状态；I1..I6为big_yaw、pitch1、pitch2、roll2、
-     *       pitch3、roll3最终目标角(rad)；I7为按钮电平。
-     */
-    VOFA_VIEW_CUSTOM_CONTROLLER,
 
     /** @brief 视图数量边界，仅用于完整性检查，不能作为有效布局。 */
     VOFA_VIEW_COUNT

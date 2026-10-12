@@ -13,22 +13,16 @@
 
 /* Includes ---------------------------------------------------------------- */
 #include "bsp_can.h"
+#include "robot_board_config.h"
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
 #include "arm_task.h"
+#else
 #include "chassis_task.h"
+#endif
 #include "fdcan.h"
 #include "string.h"
 
 /* Defines ----------------------------------------------------------------- */
-
-/* Global variable --------------------------------------------------------- */
-FDCAN_RxHeaderTypeDef RxHeader1;
-uint8_t g_Can1RxData[64];
-
-FDCAN_RxHeaderTypeDef RxHeader2;
-uint8_t g_Can2RxData[64];
-
-FDCAN_RxHeaderTypeDef RxHeader3;
-uint8_t g_Can3RxData[64];
 
 /* Static Fun -------------------------------------------------------------- */
 
@@ -127,7 +121,7 @@ void FDCAN3_Config(void)
 	FDCAN_FilterTypeDef sFilterConfig;
 	/* 配置Rx过滤器 */
 	sFilterConfig.IdType =  FDCAN_STANDARD_ID;
-	sFilterConfig.FilterIndex = 2;
+	sFilterConfig.FilterIndex = 0;
 	sFilterConfig.FilterType = FDCAN_FILTER_MASK;
 	sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
 	sFilterConfig.FilterID1 = 0x00000000;
@@ -144,8 +138,8 @@ void FDCAN3_Config(void)
 		Error_Handler();
 	}
 
-	/* 激活RX FIFO1新消息通知中断 */
-	if (HAL_FDCAN_ActivateNotification(&hfdcan3, FDCAN_IT_RX_FIFO1_NEW_MESSAGE, 0) != HAL_OK)
+	/* 激活RX FIFO0新消息通知中断 */
+	if (HAL_FDCAN_ActivateNotification(&hfdcan3, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK)
 	{
 		Error_Handler();
 	}
@@ -179,7 +173,13 @@ uint8_t canx_send_data(FDCAN_HandleTypeDef *hcan, uint32_t id, uint8_t *data, ui
 	TxHeader.Identifier = id;
 	TxHeader.IdType =  FDCAN_STANDARD_ID;
 	TxHeader.TxFrameType = FDCAN_DATA_FRAME;
-	TxHeader.DataLength = len;
+	/* 使用 HAL 的 DLC 定义，不能假定每个 HAL 版本都直接用字节数。 */
+    static const uint32_t dlc[9] = {
+        FDCAN_DLC_BYTES_0, FDCAN_DLC_BYTES_1, FDCAN_DLC_BYTES_2,
+        FDCAN_DLC_BYTES_3, FDCAN_DLC_BYTES_4, FDCAN_DLC_BYTES_5,
+        FDCAN_DLC_BYTES_6, FDCAN_DLC_BYTES_7, FDCAN_DLC_BYTES_8,
+    };
+    TxHeader.DataLength = dlc[len];
 											
 	TxHeader.ErrorStateIndicator =  FDCAN_ESI_ACTIVE;
 	TxHeader.BitRateSwitch = FDCAN_BRS_OFF; // 比特率切换关闭，仅用于经典CAN
@@ -202,83 +202,52 @@ uint8_t canx_send_data(FDCAN_HandleTypeDef *hcan, uint32_t id, uint8_t *data, ui
  * @note   在FDCAN1和FDCAN3接收到新消息时调用
  */
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
-{ 
-  if((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET)
-  {
-    if(hfdcan->Instance == FDCAN1)
+{
+    FDCAN_RxHeaderTypeDef header;
+    uint8_t data[64];
+
+    if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == 0U)
     {
-		/* 一次排空 FIFO，避免底盘反馈占满队列后丢失 GM6020 帧。 */
-		while (HAL_FDCAN_GetRxFifoFillLevel(
-		           hfdcan,
-		           FDCAN_RX_FIFO0) > 0U)
-		{
-			memset(g_Can1RxData, 0, sizeof(g_Can1RxData));
-			if (HAL_FDCAN_GetRxMessage(
-			        hfdcan,
-			        FDCAN_RX_FIFO0,
-			        &RxHeader1,
-			        g_Can1RxData) != HAL_OK)
-			{
-				break;
-			}
-			ChassisTask_OnCan1Rx(RxHeader1.Identifier,
-							   g_Can1RxData,
-							   RxHeader1.DataLength);
-			ArmTask_OnCan1Rx(RxHeader1.Identifier,
-							 g_Can1RxData,
-							 RxHeader1.DataLength);
-		}
-	}
-	else if(hfdcan->Instance == FDCAN3)
-	{
-		/* 从RX_FIFO0检索Rx消息 */
-		memset(g_Can3RxData, 0, sizeof(g_Can3RxData));	// 清空接收缓冲区	
-		HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &RxHeader3, g_Can3RxData);
-			
-		switch(RxHeader3.Identifier)
-		{
-			
-			
-			
-			default: break;
-		}
-	}
-  }
+        return;
+    }
+    while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO0) > 0U)
+    {
+        if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &header, data) != HAL_OK)
+        {
+            break;
+        }
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
+        ArmTask_OnCanRx(hfdcan, &header, data, 8U);
+#else
+        if ((hfdcan == &hfdcan1) && (header.IdType == FDCAN_STANDARD_ID) &&
+            (header.RxFrameType == FDCAN_DATA_FRAME) &&
+            (header.DataLength == FDCAN_DLC_BYTES_8) &&
+            (header.FDFormat == FDCAN_CLASSIC_CAN))
+        {
+            ChassisTask_OnCan1Rx(header.Identifier, data, header.DataLength);
+        }
+#endif
+    }
 }
 
-/**
- * @brief  FDCAN RxFifo1回调函数
- * @param  hfdcan: FDCAN句柄
- * @param  RxFifo1ITs: RxFifo1中断标志
- * @return 无
- * @note   在FDCAN2接收到新消息时调用
- */
+/** @brief CAN2 使用 FIFO1；只向机械臂板控制任务发布反馈。 */
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
-  if((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) != RESET)
-  {
-    if(hfdcan->Instance == FDCAN2)
-    {
-		/* 一次排空 FIFO，避免五个达妙反馈连续到达时积压。 */
-		while (HAL_FDCAN_GetRxFifoFillLevel(
-		           hfdcan,
-		           FDCAN_RX_FIFO1) > 0U)
-		{
-			memset(g_Can2RxData, 0, sizeof(g_Can2RxData));
-			if (HAL_FDCAN_GetRxMessage(
-			        hfdcan,
-			        FDCAN_RX_FIFO1,
-			        &RxHeader2,
-			        g_Can2RxData) != HAL_OK)
-			{
-				break;
-			}
-			ArmTask_OnCan2Rx(RxHeader2.Identifier,
-						   g_Can2RxData,
-						   RxHeader2.DataLength);
-		}
-    }
-  }
-}
+    FDCAN_RxHeaderTypeDef header;
+    uint8_t data[64];
 
-/* ------------------------------------------------------------------------- */
+    if ((RxFifo1ITs & FDCAN_IT_RX_FIFO1_NEW_MESSAGE) == 0U)
+    {
+        return;
+    }
+    while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO1) > 0U)
+    {
+        if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &header, data) != HAL_OK)
+        {
+            break;
+        }
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
+        ArmTask_OnCanRx(hfdcan, &header, data, 8U);
+#endif
+    }
+}

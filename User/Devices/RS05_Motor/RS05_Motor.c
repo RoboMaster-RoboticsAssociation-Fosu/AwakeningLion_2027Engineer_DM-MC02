@@ -164,20 +164,27 @@ static float rs05_read_float(const uint8_t *data)
     return value;
 }
 
-/** @brief 有限输入线性量化：越界钳位，内部截断，端点直接产生完整满量程。 */
-static uint16_t rs05_quantize(float value, const RS05_Motor_Scale_t *scale, bool *clamped)
+/**
+ * @brief 有限输入线性量化：越界钳位，内部截断，端点直接产生完整满量程。
+ * @param limited 内部有效输出指针，记录限幅后、整数编码前的物理量。
+ */
+static uint16_t rs05_quantize(float value, const RS05_Motor_Scale_t *scale,
+                              bool *clamped, float *limited)
 {
     float code;
     if (value <= scale->minimum)
     {
+        *limited = scale->minimum;
         *clamped = *clamped || value < scale->minimum;
         return 0U;
     }
     if (value >= scale->maximum)
     {
+        *limited = scale->maximum;
         *clamped = *clamped || value > scale->maximum;
         return scale->maximum_code;
     }
+    *limited = value;
     code = (value - scale->minimum) * scale->encode_scale;
     /* 浮点舍入可能让内部值落到满量程，转整数前保证目标位宽有效。 */
     return code >= (float)scale->maximum_code ? scale->maximum_code : (uint16_t)code;
@@ -427,16 +434,21 @@ RS05_Motor_Status_e RS05_Motor_SetActiveReport(FDCAN_HandleTypeDef *hcan,
 
 /* 控制与参数发送 ---------------------------------------------------------- */
 
-/** @brief 双协议五参数运控；私有力矩位于 ID，MIT 力矩位于负载的低 12 位。 */
+/**
+ * @brief 双协议五参数限幅、编码与发送，成功后提交可选限幅结果。
+ * @note 私有力矩位于 ID，MIT 力矩位于负载的低 12 位；失败不修改 applied。
+ */
 RS05_Motor_Status_e RS05_Motor_ControlMotion(FDCAN_HandleTypeDef *hcan, const RS05_Motor_Info_t *motor,
                                           float position_rad, float velocity_rad_s,
-                                          float kp, float kd, float torque_nm)
+                                          float kp, float kd, float torque_nm,
+                                          RS05_Motor_MotionCommand_t *applied)
 {
     FDCAN_TxHeaderTypeDef header;
     uint8_t data[RS05_MOTOR_FRAME_BYTES] = {0};
     const RS05_Motor_Scale_t *scales;
     uint16_t p, v, kp_code, kd_code, torque;
     bool clamped = false;
+    RS05_Motor_MotionCommand_t limited;
     RS05_Motor_Status_e status = rs05_prepare_tx(hcan, motor, 1U, 0U, &header);
     if (status != RS05_MOTOR_OK)
     {
@@ -447,11 +459,11 @@ RS05_Motor_Status_e RS05_Motor_ControlMotion(FDCAN_HandleTypeDef *hcan, const RS
         return RS05_MOTOR_INVALID_ARGUMENT;
     }
     scales = rs05_scales[motor->config.protocol == RS05_MOTOR_PROTOCOL_PRIVATE ? 0 : 1];
-    p = rs05_quantize(position_rad, &scales[RS05_SCALE_POSITION], &clamped);
-    v = rs05_quantize(velocity_rad_s, &scales[RS05_SCALE_VELOCITY], &clamped);
-    kp_code = rs05_quantize(kp, &scales[RS05_SCALE_KP], &clamped);
-    kd_code = rs05_quantize(kd, &scales[RS05_SCALE_KD], &clamped);
-    torque = rs05_quantize(torque_nm, &scales[RS05_SCALE_TORQUE], &clamped);
+    p = rs05_quantize(position_rad, &scales[RS05_SCALE_POSITION], &clamped, &limited.position_rad);
+    v = rs05_quantize(velocity_rad_s, &scales[RS05_SCALE_VELOCITY], &clamped, &limited.velocity_rad_s);
+    kp_code = rs05_quantize(kp, &scales[RS05_SCALE_KP], &clamped, &limited.kp);
+    kd_code = rs05_quantize(kd, &scales[RS05_SCALE_KD], &clamped, &limited.kd);
+    torque = rs05_quantize(torque_nm, &scales[RS05_SCALE_TORQUE], &clamped, &limited.torque_nm);
     rs05_write_be16(data, p);
     if (motor->config.protocol == RS05_MOTOR_PROTOCOL_PRIVATE)
     {
@@ -484,6 +496,10 @@ RS05_Motor_Status_e RS05_Motor_ControlMotion(FDCAN_HandleTypeDef *hcan, const RS
     if (HAL_FDCAN_AddMessageToTxFifoQ(hcan, &header, data) != HAL_OK)
     {
         return RS05_MOTOR_SEND_FAILED;
+    }
+    if (applied != NULL)
+    {
+        *applied = limited;
     }
     return clamped ? RS05_MOTOR_CLAMPED : RS05_MOTOR_OK;
 }

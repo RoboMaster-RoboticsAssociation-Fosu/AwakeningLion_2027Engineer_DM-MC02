@@ -16,6 +16,7 @@
 #include "bsp_dwt.h"
 #include "fdcan.h"
 #include "cmsis_os2.h"
+#include <math.h>
 
 /* Defines ----------------------------------------------------------------- */
 
@@ -82,6 +83,7 @@ static const struct DM_Motor_MitLimits *DM_GetMitLimits(DM_Motor_Type_e motor_ty
 	return NULL;
 }
 
+/** @brief 有限物理量按协议范围钳位，不引入机械或业务限位。 */
 static float DM_Clamp(float value, float min_value, float max_value)
 {
 	if(value < min_value)
@@ -101,15 +103,18 @@ static float DM_Clamp(float value, float min_value, float max_value)
  * @param  x_min: 范围最小值
  * @param  x_max: 范围最大值
  * @param  bits: 目标无符号整数的位数
+ * @param  limited: 返回限幅后、整数编码前的物理值；内部调用必须提供有效指针
  * @return 无符号整数
  * @note   将浮点数x在指定范围[x_min, x_max]内进行线性映射，映射为指定位数的一个无符号整数
  */
-static uint16_t DM_FloatToUint(float x_float, float x_min, float x_max, uint8_t bits)
+static uint16_t DM_FloatToUint(float x_float, float x_min, float x_max,
+                               uint8_t bits, float *limited)
 {
 	float span = x_max - x_min;
 	uint32_t max_code = (1UL << bits) - 1UL;
 
 	x_float = DM_Clamp(x_float, x_min, x_max);
+	*limited = x_float;
 	return (uint16_t)(((x_float - x_min) * (float)max_code) / span);
 }
 
@@ -282,10 +287,13 @@ uint8_t DM_Disable_Motor(hcan_t* hcan, uint16_t motor_id, uint16_t mode_id, uint
  * @param  kd: KD系数
  * @param  torq: 扭矩
  * @param  delay_time: 延时时间
- * @return 0 表示CAN发送成功，非零表示模式无效或发送失败
- * @note   delay_time为0时不阻塞当前任务
+ * @param  applied: 可选 MIT 限幅结果，发送成功后提交，失败或浮点模式保持不变
+ * @return 0 表示CAN发送成功，非零表示参数、型号、模式无效或发送失败
+ * @note   delay_time为0时不阻塞当前任务；MIT 拒绝 NaN/Inf，不自动使能或切模式
  */
-uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor, float pos, float vel, float kp, float kd, float torq, uint8_t delay_time)
+uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor,
+                      float pos, float vel, float kp, float kd, float torq,
+                      uint8_t delay_time, DM_Motor_MitCommand_t *applied)
 {
 	uint8_t send_status = 1U;
 	const struct DM_Motor_MitLimits *limits;
@@ -301,31 +309,38 @@ uint8_t DM_Motor_Ctrl(hcan_t *hcan, volatile DM_Motor_Info_t *motor, float pos, 
         {
             uint8_t data_mit[8];
             uint16_t pos_tmp, vel_tmp, kp_tmp, kd_tmp, tor_tmp;
+            DM_Motor_MitCommand_t limited;
 
             uint16_t id = motor->ID_Set.TxIdentifier + MIT_MODE;
 
             limits = DM_GetMitLimits(motor->Motor_Type);
-            if(limits == NULL)
+            if(limits == NULL || !isfinite(pos) || !isfinite(vel) ||
+               !isfinite(kp) || !isfinite(kd) || !isfinite(torq))
             {
                 break;
             }
 
-            pos_tmp = DM_FloatToUint(pos, limits->position_min, limits->position_max, 16U);
-            vel_tmp = DM_FloatToUint(vel, limits->velocity_min, limits->velocity_max, 12U);
-            kp_tmp = DM_FloatToUint(kp, KP_MIN, KP_MAX, 12U);
-            kd_tmp = DM_FloatToUint(kd, KD_MIN, KD_MAX, 12U);
-            tor_tmp = DM_FloatToUint(torq, limits->torque_min, limits->torque_max, 12U);
+            pos_tmp = DM_FloatToUint(pos, limits->position_min, limits->position_max, 16U, &limited.pos);
+            vel_tmp = DM_FloatToUint(vel, limits->velocity_min, limits->velocity_max, 12U, &limited.vel);
+            kp_tmp = DM_FloatToUint(kp, KP_MIN, KP_MAX, 12U, &limited.kp);
+            kd_tmp = DM_FloatToUint(kd, KD_MIN, KD_MAX, 12U, &limited.kd);
+            tor_tmp = DM_FloatToUint(torq, limits->torque_min, limits->torque_max, 12U, &limited.torq);
 
-            data_mit[0] = (pos_tmp >> 8);
-            data_mit[1] = pos_tmp;
-            data_mit[2] = (vel_tmp >> 4);
-            data_mit[3] = ((vel_tmp & 0xF) << 4) | (kp_tmp >> 8);
-            data_mit[4] = kp_tmp;
-            data_mit[5] = (kd_tmp >> 4);
-            data_mit[6] = ((kd_tmp & 0xF) << 4) | (tor_tmp >> 8);
-            data_mit[7] = tor_tmp;
+            data_mit[0] = (uint8_t)(pos_tmp >> 8U);
+            data_mit[1] = (uint8_t)pos_tmp;
+            data_mit[2] = (uint8_t)(vel_tmp >> 4U);
+            data_mit[3] = (uint8_t)(((uint32_t)(vel_tmp & 0xFU) << 4U) | (kp_tmp >> 8U));
+            data_mit[4] = (uint8_t)kp_tmp;
+            data_mit[5] = (uint8_t)(kd_tmp >> 4U);
+            data_mit[6] = (uint8_t)(((uint32_t)(kd_tmp & 0xFU) << 4U) | (tor_tmp >> 8U));
+            data_mit[7] = (uint8_t)tor_tmp;
 
             send_status = canx_send_data(hcan, id, data_mit, 8);
+            /* 仅发布成功提交总线的限幅结果，发送失败不覆盖调用者的旧记录。 */
+            if(send_status == 0U && applied != NULL)
+            {
+                *applied = limited;
+            }
 
             break;
         }

@@ -15,6 +15,9 @@
 
 /* Includes ----------------------------------------------------------------- */
 #include "rc_system.h"
+#include "robot_board_config.h"
+
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM
 #include "DbgDisp.h"
 #include "FreeRTOS.h"
 #include "Remote_Control.h"
@@ -529,3 +532,5 @@ static uint32_t RC_GetIwEdges(int16_t previous, int16_t current)
 }
 
 /* -------------------------------------------------------------------------- */
+
+#endif /* ROBOT_BOARD_ROLE == ROBOT_BOARD_ARM */

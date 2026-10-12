@@ -30,6 +30,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "robot_board_config.h"
 #include "BMI088driver.h"
 #include "kalman_filter.h"
 #include "mahony_filter.h"
@@ -123,19 +124,19 @@ int main(void)
   {
     Error_Handler();
   }
-  /*���ڳ�ʼ�� */
   BSP_USART_Init();
-  /* ϵͳ�ӳ����� */
   //HAL_Delay(SYS_DELAY_START_TIME);
-  /* BMI088��ʼ�� */
+#if ROBOT_BOARD_ROLE == ROBOT_BOARD_CHASSIS
   while (BMI088_init(&hspi2, 0) != BMI088_NO_ERROR)
   {
 	  ;
   }
-  Power_OUT1_ON;//imu��ʼ����ɣ��ɿص�Դ�򿪣�led����
+#endif
+  Power_OUT1_ON;
   Power_OUT2_ON;
   
-  FDCAN1_Config();//can��������ʼ��
+  /* 两种板型均启动三路 CAN；电机反馈仍由所属板型的控制任务处理。 */
+  FDCAN1_Config();
   FDCAN2_Config();
   FDCAN3_Config();
 
