@@ -1,0 +1,8 @@
+CompileFlags:
+  Add:
+    - -isystemD:/Software/DevTools/Keil/ARM/ARMCLANG/include
+    - -isystemD:/Software/DevTools/Keil/ARM/ARMCLANG/include/libcxx
+  CompilationDatabase: ./build/CtrlBoard-H7_IMU
+  Compiler: D:/Software/DevTools/Keil/ARM/ARMCLANG/bin/armclang.exe
+  Remove:
+    - -MMD

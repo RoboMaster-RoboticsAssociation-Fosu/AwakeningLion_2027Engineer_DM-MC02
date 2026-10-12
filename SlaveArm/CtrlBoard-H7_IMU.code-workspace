@@ -1,0 +1,11 @@
+{
+    "folders": [
+        {
+            "path": "."
+        }
+    ],
+    "settings": {
+        "EIDE.Option.EnableClangdConfigGenerator": false
+    },
+    "extensions": {}
+}
