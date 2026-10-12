@@ -1,0 +1,10 @@
+# Build output, migration backups and temporary verification stay local.
+build/
+bin/
+obj/
+out/
+__pycache__/
+*.pyc
+*.pyo
+
+# Board-specific IDE and toolchain exclusions live in each board's .gitignore.

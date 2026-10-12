@@ -1,0 +1,11 @@
+{
+    "folders": [
+        { "path": "SlaveArm" },
+        { "path": "Chassis" },
+        { "path": "MasterArm" },
+        { "path": "Shared" }
+    ],
+    "settings": {
+        "EIDE.Option.EnableClangdConfigGenerator": false
+    }
+}

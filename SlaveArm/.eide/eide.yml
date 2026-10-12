@@ -50,32 +50,32 @@ virtualFolder:
       folders:
         - name: STM32H7xx_HAL_Driver
           files:
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usb.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_gpio.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_hsem.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_mdma.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_exti.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart.c
-            - path: Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usb.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_gpio.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_hsem.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_mdma.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_exti.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart.c
+            - path: ../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c
           folders: []
         - name: CMSIS
           files:
@@ -83,41 +83,41 @@ virtualFolder:
           folders: []
     - name: Device
       files:
-        - path: User/Devices/Remote_Control/Remote_Control.c
-        - path: User/Devices/DM_Motor/DM_Motor.c
-        - path: User/Devices/RS05_Motor/RS05_Motor.c
-        - path: User/Devices/PC_Comm/PC_Comm.c
+        - path: ../Shared/Devices/Remote_Control/Remote_Control.c
+        - path: ../Shared/Devices/DM_Motor/DM_Motor.c
+        - path: ../Shared/Devices/RS05_Motor/RS05_Motor.c
+        - path: ../Shared/Devices/PC_Comm/PC_Comm.c
       folders: []
     - name: Algorithm
       files:
-        - path: User/Algorithm/CRC/CRC.c
+        - path: ../Shared/Algorithm/CRC/CRC.c
       folders: []
     - name: DSP
       files:
-        - path: Drivers/CMSIS/DSP/Lib/ARM/arm_cortexM7lfdp_math.lib
+        - path: ../Shared/Drivers/CMSIS/DSP/Lib/ARM/arm_cortexM7lfdp_math.lib
       folders: []
     - name: Middlewares
       files: []
       folders:
         - name: FreeRTOS
           files:
-            - path: Middlewares/Third_Party/FreeRTOS/Source/croutine.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/event_groups.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/list.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/queue.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/tasks.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/timers.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c
-            - path: Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c
-            - path: User/ThirdParty/FreeRTOS/ARM_CM4F_AC6/port.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/croutine.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/event_groups.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/list.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/queue.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/tasks.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/timers.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c
+            - path: ../Shared/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c
+            - path: ../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6/port.c
           folders: []
         - name: USB_Device_Library
           files:
-            - path: Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c
-            - path: Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c
-            - path: Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c
-            - path: Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+            - path: ../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c
+            - path: ../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c
+            - path: ../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c
+            - path: ../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
           folders: []
     - name: APP
       files:
@@ -131,14 +131,14 @@ virtualFolder:
       folders: []
     - name: Protocol
       files:
-        - path: User/Protocol/DbgDisp/DbgDisp.c
-        - path: User/Protocol/VOFA/vofa.c
-        - path: User/Protocol/BoardLink/board_link_protocol.c
-        - path: User/Protocol/BoardLink/board_link_payload.c
+        - path: ../Shared/Protocol/DbgDisp/DbgDisp.c
+        - path: ../Shared/Protocol/VOFA/vofa.c
+        - path: ../Shared/Protocol/BoardLink/board_link_protocol.c
+        - path: ../Shared/Protocol/BoardLink/board_link_payload.c
       folders: []
     - name: bsp
       files:
-        - path: User/bsp/bsp_dwt.c
+        - path: ../Shared/Bsp/bsp_dwt.c
         - path: User/Bsp/bsp_uart.c
         - path: User/Bsp/bsp_can.c
         - path: User/Bsp/bsp_usb.c
@@ -166,29 +166,30 @@ targets:
       incList:
         - .
         - Core/Inc
-        - Drivers/STM32H7xx_HAL_Driver/Inc
-        - Drivers/STM32H7xx_HAL_Driver/Inc/Legacy
-        - Drivers/CMSIS/Device/ST/STM32H7xx/Include
-        - Drivers/CMSIS/Include
-        - Drivers/CMSIS/DSP/Include
-        - Middlewares/Third_Party/FreeRTOS/Source/include
-        - Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
-        - Drivers/CMSIS/RTOS2/Include
-        - User/ThirdParty/FreeRTOS/ARM_CM4F_AC6
+        - ../Shared/Drivers/STM32H7xx_HAL_Driver/Inc
+        - ../Shared/Drivers/STM32H7xx_HAL_Driver/Inc/Legacy
+        - ../Shared/Drivers/CMSIS/Device/ST/STM32H7xx/Include
+        - ../Shared/Drivers/CMSIS/Include
+        - ../Shared/Drivers/CMSIS/DSP/Include
+        - ../Shared/Middlewares/Third_Party/FreeRTOS/Source/include
+        - ../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2
+        - ../Shared/Drivers/CMSIS/RTOS2/Include
+        - ../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6
         - User/APP
         - User/Bsp
-        - User/Devices/DM_Motor
-        - User/Devices/RS05_Motor
-        - User/Devices/Remote_Control
-        - User/Algorithm/CRC
+        - ../Shared/Bsp
+        - ../Shared/Devices/DM_Motor
+        - ../Shared/Devices/RS05_Motor
+        - ../Shared/Devices/Remote_Control
+        - ../Shared/Algorithm/CRC
         - USB_DEVICE/App
         - USB_DEVICE/Target
-        - Middlewares/ST/STM32_USB_Device_Library/Core/Inc
-        - Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
-        - User/Devices/PC_Comm
-        - User/Protocol/DbgDisp
-        - User/Protocol/VOFA
-        - User/Protocol/BoardLink
+        - ../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Inc
+        - ../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc
+        - ../Shared/Devices/PC_Comm
+        - ../Shared/Protocol/DbgDisp
+        - ../Shared/Protocol/VOFA
+        - ../Shared/Protocol/BoardLink
         - .cmsis/include
         - MDK-ARM/RTE/_CtrlBoard-H7_IMU
       libList: []

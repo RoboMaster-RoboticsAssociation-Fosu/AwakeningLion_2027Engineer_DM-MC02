@@ -335,7 +335,7 @@
               <MiscControls>-Wno-ignored-attributes</MiscControls>
               <Define>USE_HAL_DRIVER,STM32H723xx,USE_PWR_LDO_SUPPLY</Define>
               <Undefine />
-              <IncludePath>../Core/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc;../Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../Drivers/CMSIS/Device/ST/STM32H7xx/Include;../Drivers/CMSIS/Include;../Drivers/CMSIS/DSP/Include;../User/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/Algorithm/mahony;../User/APP;../User/Bsp;../User/Devices/BMI088;../User/Algorithm/PID;../User/Devices/Remote_Control;../User/Devices/DJI_Motor;../User/Algorithm/CRC;../USB_DEVICE/App;../USB_DEVICE/Target;../Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../User/Devices/PC_Comm;../User/Protocol/VOFA;../Middlewares/Third_Party/FreeRTOS/Source/include;../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../Drivers/CMSIS/RTOS2/Include;../User/Protocol/BoardLink</IncludePath>
+              <IncludePath>../Core/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../../Shared/Drivers/CMSIS/Device/ST/STM32H7xx/Include;../../Shared/Drivers/CMSIS/Include;../../Shared/Drivers/CMSIS/DSP/Include;../../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../../Shared/Algorithm/mahony;../User/APP;../User/Bsp;../../Shared/Devices/BMI088;../../Shared/Algorithm/PID;../../Shared/Devices/Remote_Control;../../Shared/Devices/DJI_Motor;../../Shared/Algorithm/CRC;../USB_DEVICE/App;../USB_DEVICE/Target;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../../Shared/Devices/PC_Comm;../../Shared/Protocol/VOFA;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/include;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../../Shared/Drivers/CMSIS/RTOS2/Include;../../Shared/Protocol/BoardLink;../../Shared/Bsp</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -353,7 +353,7 @@
               <MiscControls />
               <Define />
               <Undefine />
-              <IncludePath>../Drivers/CMSIS/Include</IncludePath>
+              <IncludePath>../../Shared/Drivers/CMSIS/Include;../../Shared/Bsp;../../Shared/Protocol/BoardLink</IncludePath>
             </VariousControls>
           </Aads>
           <LDads>
@@ -667,17 +667,17 @@
             <File>
               <FileName>stm32h7xx_hal_tim.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_tim_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_tim_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_pcd.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -725,7 +725,7 @@
             <File>
               <FileName>stm32h7xx_hal_pcd_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pcd_ex.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -773,7 +773,7 @@
             <File>
               <FileName>stm32h7xx_ll_usb.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usb.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_ll_usb.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -821,87 +821,87 @@
             <File>
               <FileName>stm32h7xx_hal_rcc.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_rcc_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_flash.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_flash_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_flash_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_gpio.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_gpio.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_gpio.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_hsem.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_hsem.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_hsem.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_dma.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_dma_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_dma_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_mdma.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_mdma.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_mdma.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_pwr.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_pwr_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_pwr_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_cortex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_cortex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_i2c.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_i2c_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_i2c_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_exti.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_exti.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_exti.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_fdcan.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -949,17 +949,17 @@
             <File>
               <FileName>stm32h7xx_hal_spi.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_spi_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi_ex.c</FilePath>
             </File>
             <File>
               <FileName>stm32h7xx_hal_uart.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1007,7 +1007,7 @@
             <File>
               <FileName>stm32h7xx_hal_uart_ex.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c</FilePath>
+              <FilePath>../../Shared/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_uart_ex.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1070,22 +1070,22 @@
             <File>
               <FileName>BMI088driver.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Devices\BMI088\BMI088driver.c</FilePath>
+              <FilePath>../../Shared/Devices/BMI088/BMI088driver.c</FilePath>
             </File>
             <File>
               <FileName>BMI088Middleware.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Devices\BMI088\BMI088Middleware.c</FilePath>
+              <FilePath>../../Shared/Devices/BMI088/BMI088Middleware.c</FilePath>
             </File>
             <File>
               <FileName>DJI_Motor.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Devices\DJI_Motor\DJI_Motor.c</FilePath>
+              <FilePath>../../Shared/Devices/DJI_Motor/DJI_Motor.c</FilePath>
             </File>
             <File>
               <FileName>PC_Comm.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Devices\PC_Comm\PC_Comm.c</FilePath>
+              <FilePath>../../Shared/Devices/PC_Comm/PC_Comm.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1095,17 +1095,17 @@
             <File>
               <FileName>mahony_filter.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Algorithm\mahony\mahony_filter.c</FilePath>
+              <FilePath>../../Shared/Algorithm/mahony/mahony_filter.c</FilePath>
             </File>
             <File>
               <FileName>pid.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Algorithm\PID\pid.c</FilePath>
+              <FilePath>../../Shared/Algorithm/PID/pid.c</FilePath>
             </File>
             <File>
               <FileName>CRC.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Algorithm\CRC\CRC.c</FilePath>
+              <FilePath>../../Shared/Algorithm/CRC/CRC.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1115,7 +1115,7 @@
             <File>
               <FileName>arm_cortexM7lfdp_math.lib</FileName>
               <FileType>4</FileType>
-              <FilePath>..\Drivers\CMSIS\DSP\Lib\ARM\arm_cortexM7lfdp_math.lib</FilePath>
+              <FilePath>../../Shared/Drivers/CMSIS/DSP/Lib/ARM/arm_cortexM7lfdp_math.lib</FilePath>
             </File>
           </Files>
         </Group>
@@ -1180,7 +1180,7 @@
             <File>
               <FileName>port.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../User/ThirdParty/FreeRTOS/ARM_CM4F_AC6/port.c</FilePath>
+              <FilePath>../../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6/port.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1228,7 +1228,7 @@
             <File>
               <FileName>mpu_wrappers_v2.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/portable/Common/mpu_wrappers_v2.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/portable/Common/mpu_wrappers_v2.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1276,7 +1276,7 @@
             <File>
               <FileName>croutine.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/croutine.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/croutine.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1324,7 +1324,7 @@
             <File>
               <FileName>event_groups.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/event_groups.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/event_groups.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1372,7 +1372,7 @@
             <File>
               <FileName>list.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/list.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/list.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1420,7 +1420,7 @@
             <File>
               <FileName>queue.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/queue.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/queue.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1468,7 +1468,7 @@
             <File>
               <FileName>stream_buffer.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/stream_buffer.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1516,7 +1516,7 @@
             <File>
               <FileName>tasks.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/tasks.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/tasks.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1564,7 +1564,7 @@
             <File>
               <FileName>timers.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/timers.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/timers.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1612,7 +1612,7 @@
             <File>
               <FileName>cmsis_os2.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1660,7 +1660,7 @@
             <File>
               <FileName>heap_4.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c</FilePath>
+              <FilePath>../../Shared/Middlewares/Third_Party/FreeRTOS/Source/portable/MemMang/heap_4.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -1753,17 +1753,17 @@
             <File>
               <FileName>vofa.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Protocol\VOFA\vofa.c</FilePath>
+              <FilePath>../../Shared/Protocol/VOFA/vofa.c</FilePath>
             </File>
             <File>
               <FileName>board_link_protocol.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Protocol\BoardLink\board_link_protocol.c</FilePath>
+              <FilePath>../../Shared/Protocol/BoardLink/board_link_protocol.c</FilePath>
             </File>
             <File>
               <FileName>board_link_payload.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\Protocol\BoardLink\board_link_payload.c</FilePath>
+              <FilePath>../../Shared/Protocol/BoardLink/board_link_payload.c</FilePath>
             </File>
           </Files>
         </Group>
@@ -1773,7 +1773,7 @@
             <File>
               <FileName>bsp_dwt.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\bsp\bsp_dwt.c</FilePath>
+              <FilePath>../../Shared/Bsp/bsp_dwt.c</FilePath>
             </File>
             <File>
               <FileName>bsp_uart.c</FileName>
@@ -2180,7 +2180,7 @@
             <File>
               <FileName>usbd_core.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c</FilePath>
+              <FilePath>../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_core.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -2228,7 +2228,7 @@
             <File>
               <FileName>usbd_ctlreq.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c</FilePath>
+              <FilePath>../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ctlreq.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -2276,7 +2276,7 @@
             <File>
               <FileName>usbd_ioreq.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c</FilePath>
+              <FilePath>../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Src/usbd_ioreq.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>
@@ -2324,7 +2324,7 @@
             <File>
               <FileName>usbd_cdc.c</FileName>
               <FileType>1</FileType>
-              <FilePath>../Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c</FilePath>
+              <FilePath>../../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c</FilePath>
               <FileOption>
                 <CommonProperty>
                   <UseCPPCompiler>2</UseCPPCompiler>

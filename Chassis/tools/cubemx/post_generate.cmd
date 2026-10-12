@@ -1,6 +1,5 @@
 @echo off
 setlocal
-rem CubeMX User Actions execute batch files reliably on Windows. The PowerShell
-rem script resolves the repository root from this wrapper's own location.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0post_generate.ps1"
+rem CubeMX invokes this local entry; the common implementation lives in Shared.
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\..\..\Shared\tools\cubemx\post_generate.ps1" -ProjectRoot "%~dp0..\.."
 exit /b %ERRORLEVEL%
