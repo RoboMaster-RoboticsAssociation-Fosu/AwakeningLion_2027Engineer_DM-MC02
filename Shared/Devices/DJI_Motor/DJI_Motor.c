@@ -17,6 +17,7 @@
 #include "fdcan.h"
 #include "stdbool.h"
 #include "cmsis_os2.h"
+#include <math.h>
 
 /* Defines ----------------------------------------------------------------- */
 
@@ -81,6 +82,90 @@ uint8_t DJI_Motor_SendGroupCurrent(hcan_t *hcan,
 	}
 
 	return canx_send_data(hcan, tx_identifier, data, sizeof(data));
+}
+
+/** @brief 选择型号换算参数后编码整组力矩；成功发送才发布限幅结果。 */
+DJI_Motor_TorqueStatus_e DJI_Motor_SendGroupTorque(hcan_t *hcan,
+                                                 DJI_Motor_Type_e motor_type,
+                                                 uint32_t tx_identifier,
+                                                 const float torque_nm[4],
+                                                 float applied_torque_nm[4])
+{
+    int16_t current[4];
+    float limited_torque_nm[4];
+    float torque_max_nm;
+    float command_per_torque_nm;
+    int16_t current_command_max;
+    uint32_t index;
+
+    if ((hcan == NULL) || (torque_nm == NULL))
+    {
+        return DJI_MOTOR_TORQUE_INVALID_ARGUMENT;
+    }
+    /* 型号决定物理量换算和合法控制帧；未核验型号不猜测参数、不发送。 */
+    switch (motor_type)
+    {
+        case DJI_GM6020:
+            if ((tx_identifier != DJI_GM6020_CURRENT_GROUP1_4_TX_ID) &&
+                (tx_identifier != DJI_GM6020_CURRENT_GROUP5_7_TX_ID))
+            {
+                return DJI_MOTOR_TORQUE_INVALID_ARGUMENT;
+            }
+            /* ID 5~7 组的最后两字节保留，第 4 槽必须为 0。 */
+            if ((tx_identifier == DJI_GM6020_CURRENT_GROUP5_7_TX_ID) &&
+                (torque_nm[3] != 0.0f))
+            {
+                return DJI_MOTOR_TORQUE_INVALID_ARGUMENT;
+            }
+            torque_max_nm = DJI_GM6020_TORQUE_MAX_NM;
+            current_command_max = DJI_GM6020_CURRENT_COMMAND_MAX;
+            break;
+        /* 暂未支持型号保护开始：3508/2006 的转矩电流换算尚未核验。
+         * 范围仅本力矩接口；取得对应型号协议、转矩常数并验证后增加换算分支。
+         */
+        default:
+            return DJI_MOTOR_TORQUE_UNSUPPORTED_TYPE;
+        /* 暂未支持型号保护结束。 */
+    }
+    command_per_torque_nm = (float)current_command_max / torque_max_nm;
+
+    for (index = 0U; index < 4U; index++)
+    {
+        if (!isfinite(torque_nm[index]))
+        {
+            return DJI_MOTOR_TORQUE_INVALID_ARGUMENT;
+        }
+        /* 先限幅再转换，避免大数溢出；端点直接编码，保证正负满量程准确。 */
+        if (torque_nm[index] >= torque_max_nm)
+        {
+            limited_torque_nm[index] = torque_max_nm;
+            current[index] = current_command_max;
+        }
+        else if (torque_nm[index] <= -torque_max_nm)
+        {
+            limited_torque_nm[index] = -torque_max_nm;
+            current[index] = (int16_t)-current_command_max;
+        }
+        else
+        {
+            limited_torque_nm[index] = torque_nm[index];
+            current[index] = (int16_t)roundf(torque_nm[index] * command_per_torque_nm);
+        }
+    }
+
+    if (DJI_Motor_SendGroupCurrent(hcan, tx_identifier, current) != 0U)
+    {
+        return DJI_MOTOR_TORQUE_SEND_FAILED;
+    }
+    /* 整组入队成功后再提交输出，同时允许调用者原地更新目标数组。 */
+    if (applied_torque_nm != NULL)
+    {
+        for (index = 0U; index < 4U; index++)
+        {
+            applied_torque_nm[index] = limited_torque_nm[index];
+        }
+    }
+    return DJI_MOTOR_TORQUE_OK;
 }
 
 /**
