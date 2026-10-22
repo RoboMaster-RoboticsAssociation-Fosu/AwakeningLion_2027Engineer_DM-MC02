@@ -1,10 +1,12 @@
 /**
  ******************************************************************************
  * @file    chassis_task.c
- * @brief   四 M3508 麦轮底盘遥控速度闭环。
+ * @brief   六 M3508 速度闭环、四 J4340 角度 PD 与逐台调试。
  *
  * 控制链路：
- * 遥控器 CH2/CH1/CH3 -> 麦轮转速 -> 速度 PID -> C620 电流指令 -> CAN1。
+ * 当前只接调试器逐台目标，麦轮遥控映射与整车解算暂不接入。
+ * 调试器目标 -> 单台 M3508 速度 PID / J4340 角度 PD -> 对应 CAN。
+ * CAN1=四麦轮，CAN2=四条腿，CAN3=左右履带；不增加机械行程限位。
  ******************************************************************************
  */
 
@@ -13,12 +15,10 @@
 
 #include "FreeRTOS.h"
 #include "DJI_Motor.h"
-#include "Remote_Control.h"
 #include "bsp_dwt.h"
 #include "cmsis_os2.h"
 #include "fdcan.h"
 #include "pid.h"
-#include "board_link_system.h"
 #include "task.h"
 
 #include <math.h>
@@ -28,8 +28,7 @@
 /* Control timing and safety ------------------------------------------------ */
 #define CHASSIS_TASK_PERIOD_S               (0.001F)
 #define CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS   (50U)
-#define CHASSIS_MAX_LINEAR_SPEED_MPS        (2.0F)
-#define CHASSIS_MAX_ROTATION_SPEED_RAD_S    (2.0F)
+#define CHASSIS_LEG_MANAGEMENT_PERIOD_MS    (20U)
 #define CHASSIS_TASK_NOTIFY_ENABLED         (1UL << 0U)
 #define CHASSIS_TASK_NOTIFY_DISABLED        (1UL << 1U)
 #define CHASSIS_TASK_NOTIFY_MASK            \
@@ -116,31 +115,82 @@ ChassisTask_t g_chassis = {
             .last_status = PID_STATUS_OK,
         },
     },
+    .track_motor = {
+        [CHASSIS_TRACK_LEFT] = {
+            .Motor_Type = DJI_M3508,
+            .ID_Set = {.RxIdentifier = Chassis_3508_Motor1_RxID},
+        },
+        [CHASSIS_TRACK_RIGHT] = {
+            .Motor_Type = DJI_M3508,
+            .ID_Set = {.RxIdentifier = Chassis_3508_Motor2_RxID},
+        },
+    },
+    .track_speed_pid = {
+        [CHASSIS_TRACK_LEFT] = {
+            .kp = 10.0F,
+            .mode = PID_POSITIONAL_MODE,
+            .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT,
+            .improvement = {
+                .output_min = -(float)DJI_C620_CURRENT_COMMAND_MAX,
+                .output_max = (float)DJI_C620_CURRENT_COMMAND_MAX,
+            },
+            .initialized = true,
+            .last_status = PID_STATUS_OK,
+        },
+        [CHASSIS_TRACK_RIGHT] = {
+            .kp = 10.0F,
+            .mode = PID_POSITIONAL_MODE,
+            .improvement_flags = PID_IMPROVEMENT_OUTPUT_LIMIT,
+            .improvement = {
+                .output_min = -(float)DJI_C620_CURRENT_COMMAND_MAX,
+                .output_max = (float)DJI_C620_CURRENT_COMMAND_MAX,
+            },
+            .initialized = true,
+            .last_status = PID_STATUS_OK,
+        },
+    },
+    .leg_motor = {
+        [CHASSIS_LEG_RIGHT_FRONT] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x01U, 0x11U),
+        [CHASSIS_LEG_LEFT_FRONT] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x02U, 0x12U),
+        [CHASSIS_LEG_LEFT_BACK] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x03U, 0x13U),
+        [CHASSIS_LEG_RIGHT_BACK] = DM_MOTOR_CREATE(Mit_mode, DM_J4340, 0x04U, 0x14U),
+    },
+    /* BEGIN 首版调试参数：默认不运行；增益只是待实机调整的悬空测试起点。
+     * 正式目标入口接入后，连同调试器命令结构一起移除此参数来源。
+     */
+    .command = {
+        .motor = CHASSIS_TEST_MOTOR_NONE,
+        .leg_kp = 5.0F,
+        .leg_kd = 0.2F,
+    },
+    /* END 首版调试参数。 */
 };
 
-static float chassis_clamp(float value, float minimum, float maximum)
+/** @brief 仅保存跨周期确实需要的选择边沿、使能证据和停止确认。 */
+static struct
 {
-    if (value < minimum)
-    {
-        return minimum;
-    }
-    if (value > maximum)
-    {
-        return maximum;
-    }
-    return value;
-}
+    uint32_t previous_motor;
+    bool stopping;
+    bool enable_sent;
+    bool disable_sent;
+    bool target_initialized;
+    uint32_t enable_sequence;
+    uint32_t disable_sequence;
+    bool management_started;
+    uint32_t management_time_ms;
+} g_chassis_test;
 
-static int16_t chassis_apply_remote_deadzone(int16_t channel)
+/** @brief 任务上下文的一次腿反馈快照；不是额外的跨周期反馈缓存。 */
+typedef struct
 {
-    if ((channel > -(int16_t)RC_CH_DEADZONE) &&
-        (channel < (int16_t)RC_CH_DEADZONE))
-    {
-        return 0;
-    }
-    return channel;
-}
+    float position_rad;
+    float velocity_rad_s;
+    DM_Motor_State_e state;
+    uint32_t sequence;
+    bool fresh;
+} ChassisLegFeedback_t;
 
+/** @brief 退出测试、切换电机或失能时清除六台速度 PID 的运行状态。 */
 static void chassis_reset_pid(void)
 {
     uint8_t wheel;
@@ -149,8 +199,13 @@ static void chassis_reset_pid(void)
     {
         (void)pid_reset(&g_chassis.wheel_speed_pid[wheel]);
     }
+    for (wheel = 0U; wheel < (uint8_t)CHASSIS_TRACK_COUNT; ++wheel)
+    {
+        (void)pid_reset(&g_chassis.track_speed_pid[wheel]);
+    }
 }
 
+/** @brief 清除两路 DJI 组帧的全部电流及目标，防止未选中槽位沿用旧输出。 */
 static void chassis_set_zero_current(void)
 {
     uint8_t wheel;
@@ -159,6 +214,11 @@ static void chassis_set_zero_current(void)
     {
         g_chassis.wheel_motor[wheel].Data.SET_Current = 0;
         g_chassis.wheel_speed_reference_rpm[wheel] = 0.0F;
+    }
+    for (wheel = 0U; wheel < (uint8_t)CHASSIS_TRACK_COUNT; ++wheel)
+    {
+        g_chassis.track_motor[wheel].Data.SET_Current = 0;
+        g_chassis.track_speed_reference_rpm[wheel] = 0.0F;
     }
 }
 
@@ -177,9 +237,13 @@ static void chassis_pack_current(uint8_t data[8],
     data[offset + 1U] = (uint8_t)command;
 }
 
-static void chassis_send_current(void)
+/** @brief 唯一的 DJI 组发送入口；两路即使一路失败也都尝试发送。 */
+static bool chassis_send_current(void)
 {
     uint8_t group_201_to_204[8] = {0U};
+    uint8_t track_group[8] = {0U};
+    bool wheel_sent;
+    bool track_sent;
 
     /*
      * 0x200: slot0=右前(0x201)，slot1=左前，slot2=左后，slot3=右后。
@@ -201,210 +265,388 @@ static void chassis_send_current(void)
         group_201_to_204,
         3U,
         g_chassis.wheel_motor[CHASSIS_WHEEL_RIGHT_BACK].Data.SET_Current);
-    (void)canx_send_data(&hfdcan1,
-                         Chassis_3508_MotorA_TxID,
-                         group_201_to_204,
-                         8U);
-}
-
-static bool chassis_read_remote_command(float *vx_mm_s,
-                                        float *vy_mm_s,
-                                        float *vw_deg_s)
-{
-    /* DBUS 满量程映射到可配置的底盘最大线速度。 */
-    const float remote_speed_scale_mm_s_per_count =
-        CHASSIS_MAX_LINEAR_SPEED_MPS * 1000.0F /
-        (float)RC_CH_VALUE_MAX;
-    /* DBUS 满量程映射到可配置的最大旋转角速度，内部单位为 deg/s。 */
-    const float remote_spin_scale_deg_s_per_count =
-        CHASSIS_MAX_ROTATION_SPEED_RAD_S * 57.2957795F /
-        (float)RC_CH_VALUE_MAX;
-    int16_t channel_0;
-    int16_t channel_1;
-    int16_t channel_2;
-
-    if ((vx_mm_s == NULL) || (vy_mm_s == NULL) ||
-        (vw_deg_s == NULL) ||
-        (!g_board_link_system.remote_valid || remote_ctrl.rc_lost))
-    {
-        return false;
-    }
-
-    taskENTER_CRITICAL();
-    channel_0 = remote_ctrl.rc.ch[0];
-    channel_1 = remote_ctrl.rc.ch[1];
-    channel_2 = remote_ctrl.rc.ch[2];
-    taskEXIT_CRITICAL();
-
-    channel_0 = chassis_apply_remote_deadzone(channel_0);
-    channel_1 = chassis_apply_remote_deadzone(channel_1);
-    channel_2 = chassis_apply_remote_deadzone(channel_2);
-
-    *vx_mm_s =
-        chassis_clamp((float)channel_1,
-                      -(float)RC_CH_VALUE_MAX,
-                      (float)RC_CH_VALUE_MAX) *
-        remote_speed_scale_mm_s_per_count;
-    *vy_mm_s =
-        -chassis_clamp((float)channel_0,
-                       -(float)RC_CH_VALUE_MAX,
-                       (float)RC_CH_VALUE_MAX) *
-        remote_speed_scale_mm_s_per_count;
-    *vw_deg_s =
-        -chassis_clamp((float)channel_2,
-                       -(float)RC_CH_VALUE_MAX,
-                       (float)RC_CH_VALUE_MAX) *
-        remote_spin_scale_deg_s_per_count;
-    return true;
-}
-
-static bool chassis_read_wheel_feedback(int16_t wheel_speed_rpm[])
-{
-    bool feedback_ready = true;
-    uint32_t feedback_time_ms[CHASSIS_WHEEL_COUNT];
-    uint32_t now_ms;
-    uint8_t wheel;
-
-    if (wheel_speed_rpm == NULL)
-    {
-        return false;
-    }
-
-    taskENTER_CRITICAL();
-    for (wheel = 0U; wheel < (uint8_t)CHASSIS_WHEEL_COUNT; ++wheel)
-    {
-        wheel_speed_rpm[wheel] =
-            g_chassis.wheel_motor[wheel].Data.Velocity;
-        feedback_time_ms[wheel] =
-            g_chassis.wheel_motor[wheel].last_feedback_time_ms;
-        if (!g_chassis.wheel_motor[wheel].feedback_valid)
-        {
-            feedback_ready = false;
-        }
-    }
-    taskEXIT_CRITICAL();
-
-    now_ms = DWT_GetTimeMs();
-    for (wheel = 0U; wheel < (uint8_t)CHASSIS_WHEEL_COUNT; ++wheel)
-    {
-        if ((uint32_t)(now_ms - feedback_time_ms[wheel]) >
-            CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS)
-        {
-            feedback_ready = false;
-        }
-    }
-    return feedback_ready;
-}
-
-static void chassis_mecanum_calculate(float vx_mm_s,
-                                      float vy_mm_s,
-                                      float vw_deg_s)
-{
-    /*
-     * 旋转速度 deg/s 到轮缘线速度 mm/s：
-     * ((轴距 365.0 mm + 轮距 375.0 mm) / 2) * (pi / 180)
-     * = 370.0 mm * 0.0174532925 rad/deg
-     * = 6.457718 mm/deg。
-     */
-    const float rotate_ratio = 6.457718F;
-    /*
-     * 轮缘线速度 mm/s 到减速前电机转速 rpm：
-     * 60 s/min * M3508 减速比 19 / 轮周长 478.0 mm
-     * = 1140 / 478
-     * = 2.384937 rpm/(mm/s)。
-     */
-    const float wheel_rpm_ratio = 2.384937F;
-    float max_wheel_rpm = 0.0F;
-    float scale;
-    uint8_t wheel;
-
-    g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_RIGHT_FRONT] =
-        (-vx_mm_s - vy_mm_s - vw_deg_s * rotate_ratio) *
-        wheel_rpm_ratio;
-    g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_LEFT_FRONT] =
-        (vx_mm_s - vy_mm_s - vw_deg_s * rotate_ratio) *
-        wheel_rpm_ratio;
-    g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_LEFT_BACK] =
-        (vx_mm_s + vy_mm_s - vw_deg_s * rotate_ratio) *
-        wheel_rpm_ratio;
-    g_chassis.wheel_speed_reference_rpm[CHASSIS_WHEEL_RIGHT_BACK] =
-        (-vx_mm_s + vy_mm_s - vw_deg_s * rotate_ratio) *
-        wheel_rpm_ratio;
-
-    for (wheel = 0U; wheel < (uint8_t)CHASSIS_WHEEL_COUNT; ++wheel)
-    {
-        const float wheel_rpm =
-            fabsf(g_chassis.wheel_speed_reference_rpm[wheel]);
-        if (wheel_rpm > max_wheel_rpm)
-        {
-            max_wheel_rpm = wheel_rpm;
-        }
-    }
-
-    if (max_wheel_rpm > (float)MAX_3508_RPM)
-    {
-        scale = (float)MAX_3508_RPM / max_wheel_rpm;
-        for (wheel = 0U; wheel < (uint8_t)CHASSIS_WHEEL_COUNT; ++wheel)
-        {
-            g_chassis.wheel_speed_reference_rpm[wheel] *= scale;
-        }
-    }
-}
-
-static bool chassis_update_speed_control(const int16_t wheel_speed_rpm[])
-{
-    float current_command;
-    uint8_t wheel;
-
-    if (wheel_speed_rpm == NULL)
-    {
-        return false;
-    }
-
-    for (wheel = 0U; wheel < (uint8_t)CHASSIS_WHEEL_COUNT; ++wheel)
-    {
-        if (pid_compute(
-                &g_chassis.wheel_speed_pid[wheel],
-                g_chassis.wheel_speed_reference_rpm[wheel],
-                (float)wheel_speed_rpm[wheel],
-                CHASSIS_TASK_PERIOD_S,
-                &current_command) != PID_STATUS_OK)
-        {
-            return false;
-        }
-        g_chassis.wheel_motor[wheel].Data.SET_Current =
-            (int16_t)current_command;
-    }
-    return true;
+    chassis_pack_current(track_group, 0U,
+        g_chassis.track_motor[CHASSIS_TRACK_LEFT].Data.SET_Current);
+    chassis_pack_current(track_group, 1U,
+        g_chassis.track_motor[CHASSIS_TRACK_RIGHT].Data.SET_Current);
+    wheel_sent = canx_send_data(&hfdcan1, Chassis_3508_MotorA_TxID,
+                                group_201_to_204, 8U) == 0U;
+    track_sent = canx_send_data(&hfdcan3, Chassis_3508_MotorA_TxID,
+                                track_group, 8U) == 0U;
+    return wheel_sent && track_sent;
 }
 
 static osThreadId_t g_chassis_task_thread = NULL;
 
-static void chassis_task_step(bool enabled)
+/** @brief 同一临界区取时并复制腿反馈；离线判定支持毫秒计数回绕。 */
+static ChassisLegFeedback_t chassis_read_leg_feedback(uint32_t leg)
 {
-    float vx_mm_s;
-    float vy_mm_s;
-    float vw_deg_s;
-    int16_t wheel_speed_rpm[CHASSIS_WHEEL_COUNT];
+    ChassisLegFeedback_t feedback;
+    const DM_Motor_Info_t *motor = &g_chassis.leg_motor[leg];
+    uint32_t now_ms;
 
-    /* 整车锁定、遥控或任一电机反馈失效时发送安全零电流。 */
-    if (!enabled ||
-        !chassis_read_remote_command(&vx_mm_s, &vy_mm_s, &vw_deg_s) ||
-        !chassis_read_wheel_feedback(wheel_speed_rpm))
+    taskENTER_CRITICAL();
+    /* CAN ISR 可能在进入临界区前更新下一毫秒的反馈，不能复用周期开始时间。 */
+    now_ms = DWT_GetTimeMs();
+    feedback.position_rad = motor->Data.pos;
+    feedback.velocity_rad_s = motor->Data.vel;
+    feedback.state = motor->Data.state;
+    feedback.sequence = motor->feedback_sequence;
+    feedback.fresh = motor->feedback_valid &&
+        ((uint32_t)(now_ms - motor->last_feedback_time_ms) <=
+         CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS);
+    taskEXIT_CRITICAL();
+    return feedback;
+}
+
+/**
+ * @brief 撤销测试许可并清除 DJI 输出；腿的停机确认留给本任务后续周期。
+ * @note 旧腿未确认失能前保留 active_test_motor，禁止切换时重叠输出。
+ */
+static void chassis_abort_test(ChassisTestStatus_e status)
+{
+    g_chassis.command.run = 0U;
+    g_chassis.test_status = status;
+    chassis_reset_pid();
+    chassis_set_zero_current();
+    if (g_chassis.active_test_motor >= CHASSIS_TEST_LEG_RIGHT_FRONT)
     {
-        chassis_reset_pid();
-        chassis_set_zero_current();
-        chassis_send_current();
+        if (!g_chassis_test.stopping)
+        {
+            g_chassis_test.stopping = true;
+            g_chassis_test.disable_sent = false;
+            g_chassis_test.management_started = false;
+        }
+    }
+    else
+    {
+        g_chassis.active_test_motor = CHASSIS_TEST_MOTOR_NONE;
+    }
+}
+
+/**
+ * @brief J4340 纯力矩输出边界；MIT 的位置、速度、kp、kd 始终为零。
+ * @note 不增加产品力矩/机械限位；仅沿用驱动编码范围，失败不覆盖提交记录。
+ */
+static bool chassis_send_leg_torque(uint32_t leg, float torque_nm)
+{
+    DM_Motor_MitCommand_t applied;
+
+    if (DM_Motor_Ctrl(&hfdcan2, &g_chassis.leg_motor[leg],
+                     0.0F, 0.0F, 0.0F, 0.0F, torque_nm,
+                     0U, &applied) != 0U)
+    {
+        return false;
+    }
+    g_chassis.leg_submitted_torque_nm[leg] = applied.torq;
+    return true;
+}
+
+/**
+ * @brief 非阻塞管理腿使能/失能，每 20 ms 请求一次，运动帧仍随原 1 ms 周期。
+ * @note 未选中腿只发失能；被选中腿先成功发送零力矩，再发送使能。
+ *       收到本次请求之后的新反馈才能确认状态，不以发送成功代替电机确认。
+ */
+static bool chassis_manage_legs(uint32_t now_ms)
+{
+    uint32_t leg;
+    bool sent = true;
+
+    if (g_chassis_test.management_started &&
+        ((uint32_t)(now_ms - g_chassis_test.management_time_ms) <
+         CHASSIS_LEG_MANAGEMENT_PERIOD_MS))
+    {
+        return true;
+    }
+    g_chassis_test.management_started = true;
+    g_chassis_test.management_time_ms = now_ms;
+    for (leg = 0U; leg < (uint32_t)CHASSIS_LEG_COUNT; ++leg)
+    {
+        DM_Motor_Info_t *motor = &g_chassis.leg_motor[leg];
+        const bool active = g_chassis.active_test_motor ==
+            (uint32_t)CHASSIS_TEST_LEG_RIGHT_FRONT + leg;
+        uint32_t sequence;
+
+        taskENTER_CRITICAL();
+        sequence = motor->feedback_sequence;
+        taskEXIT_CRITICAL();
+        if (active && !g_chassis_test.stopping)
+        {
+            if (g_chassis_test.target_initialized)
+            {
+                continue;
+            }
+            if (!chassis_send_leg_torque(leg, 0.0F) ||
+                (DM_Enable_Motor(&hfdcan2,
+                                 (uint16_t)motor->ID_Set.TxIdentifier,
+                                 (uint16_t)Mit_mode, 0U) != 0U))
+            {
+                sent = false;
+                continue;
+            }
+            if (!g_chassis_test.enable_sent)
+            {
+                g_chassis_test.enable_sequence = sequence;
+                g_chassis_test.enable_sent = true;
+            }
+        }
+        else
+        {
+            if (active && !chassis_send_leg_torque(leg, 0.0F))
+            {
+                sent = false;
+            }
+            /* 即使零力矩帧失败也继续尝试失能，不短路后续电机。 */
+            if (DM_Disable_Motor(&hfdcan2,
+                                  (uint16_t)motor->ID_Set.TxIdentifier,
+                                  (uint16_t)Mit_mode, 0U) != 0U)
+            {
+                sent = false;
+                continue;
+            }
+            if (active && !g_chassis_test.disable_sent)
+            {
+                g_chassis_test.disable_sequence = sequence;
+                g_chassis_test.disable_sent = true;
+            }
+        }
+    }
+    return sent;
+}
+
+/* BEGIN 首版逐台调试控制：仅替代目标来源，不替代真实电机驱动。
+ * 范围为 command 中选择的一台电机；正式遥控目标接入后移除此调试入口。
+ */
+/** @brief 只读取并控制所选电机，不要求其他九台电机反馈在线。 */
+static void chassis_run_motor_test(const ChassisTestCommand_t *command)
+{
+    if ((command->motor == CHASSIS_TEST_MOTOR_NONE) ||
+        (command->motor >= (uint32_t)CHASSIS_TEST_MOTOR_COUNT) ||
+        (command->run != 1U))
+    {
+        chassis_abort_test(CHASSIS_TEST_INVALID_COMMAND);
         return;
     }
 
-    chassis_mecanum_calculate(vx_mm_s, vy_mm_s, vw_deg_s);
-    if (!chassis_update_speed_control(wheel_speed_rpm))
+    if (command->motor < CHASSIS_TEST_LEG_RIGHT_FRONT)
     {
-        chassis_reset_pid();
-        chassis_set_zero_current();
+        DJI_Motor_Info_t *motor;
+        PidController_t *pid;
+        float *reference;
+        float current;
+        int16_t speed_rpm;
+        bool fresh;
+        uint32_t index;
+        uint32_t now_ms;
+
+        if (command->motor <= CHASSIS_TEST_WHEEL_RIGHT_BACK)
+        {
+            index = command->motor - (uint32_t)CHASSIS_TEST_WHEEL_RIGHT_FRONT;
+            motor = &g_chassis.wheel_motor[index];
+            pid = &g_chassis.wheel_speed_pid[index];
+            reference = &g_chassis.wheel_speed_reference_rpm[index];
+        }
+        else
+        {
+            index = command->motor - (uint32_t)CHASSIS_TEST_TRACK_LEFT;
+            motor = &g_chassis.track_motor[index];
+            pid = &g_chassis.track_speed_pid[index];
+            reference = &g_chassis.track_speed_reference_rpm[index];
+        }
+        if (!isfinite(command->speed_rpm))
+        {
+            chassis_abort_test(CHASSIS_TEST_INVALID_COMMAND);
+            return;
+        }
+        taskENTER_CRITICAL();
+        /* 取时与速度/时间戳快照受同一中断屏蔽保护，避免无符号负时间差。 */
+        now_ms = DWT_GetTimeMs();
+        speed_rpm = motor->Data.Velocity;
+        fresh = motor->feedback_valid &&
+            ((uint32_t)(now_ms - motor->last_feedback_time_ms) <=
+             CHASSIS_MOTOR_FEEDBACK_TIMEOUT_MS);
+        taskEXIT_CRITICAL();
+        if (!fresh)
+        {
+            if (g_chassis.active_test_motor == CHASSIS_TEST_MOTOR_NONE)
+            {
+                g_chassis.test_status = CHASSIS_TEST_WAIT_FEEDBACK;
+            }
+            else
+            {
+                chassis_abort_test(CHASSIS_TEST_FEEDBACK_LOST);
+            }
+            return;
+        }
+        g_chassis.active_test_motor = command->motor;
+        if (pid_compute(pid, command->speed_rpm, (float)speed_rpm,
+                        CHASSIS_TASK_PERIOD_S, &current) != PID_STATUS_OK)
+        {
+            chassis_abort_test(CHASSIS_TEST_INVALID_COMMAND);
+            return;
+        }
+        *reference = command->speed_rpm;
+        motor->Data.SET_Current = (int16_t)current;
+        g_chassis.test_status = CHASSIS_TEST_RUNNING;
     }
-    chassis_send_current();
+    else
+    {
+        const uint32_t leg = command->motor - (uint32_t)CHASSIS_TEST_LEG_RIGHT_FRONT;
+        const ChassisLegFeedback_t feedback = chassis_read_leg_feedback(leg);
+        float target_deg = command->position_deg;
+        float torque_nm;
+
+        if (!isfinite(command->leg_kp) || !isfinite(command->leg_kd) ||
+            (command->leg_kp < 0.0F) || (command->leg_kd < 0.0F))
+        {
+            chassis_abort_test(CHASSIS_TEST_INVALID_COMMAND);
+            return;
+        }
+        if (!feedback.fresh)
+        {
+            if (g_chassis.active_test_motor == CHASSIS_TEST_MOTOR_NONE)
+            {
+                g_chassis.test_status = CHASSIS_TEST_WAIT_FEEDBACK;
+            }
+            else
+            {
+                chassis_abort_test(CHASSIS_TEST_FEEDBACK_LOST);
+            }
+            return;
+        }
+        if (((feedback.state != DM_MOTOR_STATE_DISABLED) &&
+             (feedback.state != DM_MOTOR_STATE_ENABLED)) ||
+            !isfinite(feedback.position_rad) || !isfinite(feedback.velocity_rad_s))
+        {
+            chassis_abort_test(CHASSIS_TEST_MOTOR_FAULT);
+            return;
+        }
+        if (g_chassis.active_test_motor == CHASSIS_TEST_MOTOR_NONE)
+        {
+            g_chassis.active_test_motor = command->motor;
+            g_chassis_test.enable_sent = false;
+            g_chassis_test.target_initialized = false;
+            g_chassis_test.management_started = false;
+        }
+        if (g_chassis_test.target_initialized &&
+            (feedback.state != DM_MOTOR_STATE_ENABLED))
+        {
+            chassis_abort_test(CHASSIS_TEST_MOTOR_FAULT);
+            return;
+        }
+        if (!g_chassis_test.enable_sent ||
+            (feedback.sequence == g_chassis_test.enable_sequence) ||
+            (feedback.state != DM_MOTOR_STATE_ENABLED))
+        {
+            g_chassis.test_status = CHASSIS_TEST_ENABLING;
+            return;
+        }
+        if (!g_chassis_test.target_initialized)
+        {
+            /* 使能新反馈到达后才初始化；旧的绝对目标不会跨越使能沿回放。 */
+            target_deg = feedback.position_rad * 57.2957795F;
+            g_chassis.command.position_deg = target_deg;
+            g_chassis_test.target_initialized = true;
+        }
+        /* 目标 deg -> rad；直接位置误差，不做角度回绕、行程限位或测试窗口。
+         * tau[N.m] = kp[N.m/rad] * error[rad] - kd[N.m.s/rad] * vel[rad/s]。
+         */
+        torque_nm = command->leg_kp *
+                    (target_deg * 0.0174532925F - feedback.position_rad) -
+                    command->leg_kd * feedback.velocity_rad_s;
+        if (!isfinite(target_deg) || !isfinite(torque_nm))
+        {
+            chassis_abort_test(CHASSIS_TEST_INVALID_COMMAND);
+            return;
+        }
+        if (!chassis_send_leg_torque(leg, torque_nm))
+        {
+            chassis_abort_test(CHASSIS_TEST_SEND_FAILED);
+            return;
+        }
+        g_chassis.test_status = CHASSIS_TEST_RUNNING;
+    }
+}
+/* END 首版逐台调试控制。 */
+
+/**
+ * @brief 一个控制周期：命令快照 -> 门控/停止确认 -> 所选闭环 -> 总线发送。
+ * @note 新增测试不改变原遥控许可来源，不增加软件机械限位或姿态联动。
+ */
+static void chassis_task_step(bool enabled)
+{
+    const ChassisTestCommand_t command = g_chassis.command;
+    const uint32_t now_ms = DWT_GetTimeMs();
+    bool command_changed;
+
+    chassis_set_zero_current();
+    command_changed = command.motor != g_chassis_test.previous_motor;
+    g_chassis_test.previous_motor = command.motor;
+    if (command_changed)
+    {
+        chassis_abort_test(CHASSIS_TEST_IDLE);
+        g_chassis.command.speed_rpm = 0.0F;
+    }
+    if (!enabled)
+    {
+        chassis_abort_test(CHASSIS_TEST_REMOTE_LOCKED);
+    }
+    else if (command.run == 0U)
+    {
+        ChassisTestStatus_e status = g_chassis.test_status;
+        /* 错误保留供调试器读取；新的 run 请求或电机选择会重新评估。 */
+        if ((status == CHASSIS_TEST_RUNNING) || (status == CHASSIS_TEST_ENABLING) ||
+            (status == CHASSIS_TEST_WAIT_FEEDBACK) ||
+            (status == CHASSIS_TEST_REMOTE_LOCKED))
+        {
+            status = CHASSIS_TEST_IDLE;
+        }
+        chassis_abort_test(status);
+    }
+
+    if (g_chassis_test.stopping)
+    {
+        const uint32_t leg = g_chassis.active_test_motor -
+                             (uint32_t)CHASSIS_TEST_LEG_RIGHT_FRONT;
+        const ChassisLegFeedback_t feedback = chassis_read_leg_feedback(leg);
+
+        if (g_chassis_test.disable_sent && feedback.fresh &&
+            (feedback.sequence != g_chassis_test.disable_sequence) &&
+            (feedback.state == DM_MOTOR_STATE_DISABLED))
+        {
+            g_chassis.active_test_motor = CHASSIS_TEST_MOTOR_NONE;
+            g_chassis_test.stopping = false;
+            g_chassis_test.target_initialized = false;
+            if (g_chassis.test_status == CHASSIS_TEST_STOPPING)
+            {
+                g_chassis.test_status = CHASSIS_TEST_IDLE;
+            }
+        }
+        else if ((g_chassis.test_status == CHASSIS_TEST_IDLE) ||
+                 (g_chassis.test_status == CHASSIS_TEST_RUNNING))
+        {
+            g_chassis.test_status = CHASSIS_TEST_STOPPING;
+        }
+    }
+
+    if (enabled && !command_changed && !g_chassis_test.stopping &&
+        (command.run != 0U))
+    {
+        chassis_run_motor_test(&command);
+    }
+
+    if (!chassis_manage_legs(now_ms))
+    {
+        chassis_abort_test(CHASSIS_TEST_SEND_FAILED);
+        /* 发生故障后立即尝试停止旧腿，重试仍由后续周期负责。 */
+        (void)chassis_manage_legs(now_ms);
+    }
+    if (!chassis_send_current())
+    {
+        chassis_abort_test(CHASSIS_TEST_SEND_FAILED);
+        (void)chassis_manage_legs(now_ms);
+        (void)chassis_send_current();
+    }
 }
 
 void ChassisTask_OnCan1Rx(uint32_t identifier,
@@ -439,6 +681,48 @@ void ChassisTask_OnCan1Rx(uint32_t identifier,
     DJI_Motor_Info_Update(&g_chassis.wheel_motor[wheel], data, data_len);
 }
 
+void ChassisTask_OnCan2Rx(uint32_t identifier,
+                          const uint8_t *data,
+                          uint32_t data_len)
+{
+    uint32_t leg;
+
+    if ((data == NULL) || (data_len != FDCAN_DLC_BYTES_8))
+    {
+        return;
+    }
+    for (leg = 0U; leg < (uint32_t)CHASSIS_LEG_COUNT; ++leg)
+    {
+        DM_Motor_Info_t *motor = &g_chassis.leg_motor[leg];
+        if ((identifier == motor->ID_Set.RxIdentifier) &&
+            ((uint32_t)(data[0] & 0x0FU) == motor->ID_Set.TxIdentifier))
+        {
+            DM_Motor_Info_Update(motor, data, data_len);
+            return;
+        }
+    }
+}
+
+void ChassisTask_OnCan3Rx(uint32_t identifier,
+                          uint8_t *data,
+                          uint32_t data_len)
+{
+    uint32_t track;
+
+    if ((data == NULL) || (data_len != FDCAN_DLC_BYTES_8))
+    {
+        return;
+    }
+    for (track = 0U; track < (uint32_t)CHASSIS_TRACK_COUNT; ++track)
+    {
+        if (identifier == g_chassis.track_motor[track].ID_Set.RxIdentifier)
+        {
+            DJI_Motor_Info_Update(&g_chassis.track_motor[track], data, data_len);
+            return;
+        }
+    }
+}
+
 void ChassisTask_Notify(bool enabled)
 {
     if (g_chassis_task_thread == NULL)
@@ -459,7 +743,7 @@ void ChassisTask_Run(void)
 
     g_chassis_task_thread = osThreadGetId();
     chassis_set_zero_current();
-    chassis_send_current();
+    (void)chassis_send_current();
 
     for (;;)
     {

@@ -211,17 +211,24 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
         {
             break;
         }
-        if ((hfdcan == &hfdcan1) && (header.IdType == FDCAN_STANDARD_ID) &&
+        if ((header.IdType == FDCAN_STANDARD_ID) &&
             (header.RxFrameType == FDCAN_DATA_FRAME) &&
             (header.DataLength == FDCAN_DLC_BYTES_8) &&
             (header.FDFormat == FDCAN_CLASSIC_CAN))
         {
-            ChassisTask_OnCan1Rx(header.Identifier, data, header.DataLength);
+            if (hfdcan == &hfdcan1)
+            {
+                ChassisTask_OnCan1Rx(header.Identifier, data, header.DataLength);
+            }
+            else if (hfdcan == &hfdcan3)
+            {
+                ChassisTask_OnCan3Rx(header.Identifier, data, header.DataLength);
+            }
         }
     }
 }
 
-/** @brief CAN2 使用 FIFO1；底盘没有此总线的电机消费者，仅排空接收队列。 */
+/** @brief CAN2 使用 FIFO1；只向腿电机分发经典 CAN 标准 8 字节数据帧。 */
 void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
 {
     FDCAN_RxHeaderTypeDef header;
@@ -236,6 +243,13 @@ void HAL_FDCAN_RxFifo1Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo1ITs)
         if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO1, &header, data) != HAL_OK)
         {
             break;
+        }
+        if ((hfdcan == &hfdcan2) && (header.IdType == FDCAN_STANDARD_ID) &&
+            (header.RxFrameType == FDCAN_DATA_FRAME) &&
+            (header.DataLength == FDCAN_DLC_BYTES_8) &&
+            (header.FDFormat == FDCAN_CLASSIC_CAN))
+        {
+            ChassisTask_OnCan2Rx(header.Identifier, data, header.DataLength);
         }
     }
 }

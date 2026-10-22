@@ -335,7 +335,7 @@
               <MiscControls>-Wno-ignored-attributes</MiscControls>
               <Define>USE_HAL_DRIVER,STM32H723xx,USE_PWR_LDO_SUPPLY</Define>
               <Undefine />
-              <IncludePath>../Core/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../../Shared/Drivers/CMSIS/Device/ST/STM32H7xx/Include;../../Shared/Drivers/CMSIS/Include;../../Shared/Drivers/CMSIS/DSP/Include;../../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../../Shared/Algorithm/mahony;../User/APP;../User/Bsp;../../Shared/Devices/BMI088;../../Shared/Algorithm/PID;../../Shared/Devices/Remote_Control;../../Shared/Devices/DJI_Motor;../../Shared/Algorithm/CRC;../USB_DEVICE/App;../USB_DEVICE/Target;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../../Shared/Devices/PC_Comm;../../Shared/Devices/QD4310_Motor;../../Shared/Protocol/VOFA;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/include;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../../Shared/Drivers/CMSIS/RTOS2/Include;../../Shared/Protocol/BoardLink;../../Shared/Bsp</IncludePath>
+              <IncludePath>../Core/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../../Shared/Drivers/CMSIS/Device/ST/STM32H7xx/Include;../../Shared/Drivers/CMSIS/Include;../../Shared/Drivers/CMSIS/DSP/Include;../../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../../Shared/Algorithm/mahony;../User/APP;../User/Bsp;../../Shared/Devices/BMI088;../../Shared/Algorithm/PID;../../Shared/Devices/Remote_Control;../../Shared/Devices/DJI_Motor;../../Shared/Devices/DM_Motor;../../Shared/Algorithm/CRC;../USB_DEVICE/App;../USB_DEVICE/Target;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../../Shared/Devices/PC_Comm;../../Shared/Devices/QD4310_Motor;../../Shared/Protocol/VOFA;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/include;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../../Shared/Drivers/CMSIS/RTOS2/Include;../../Shared/Protocol/BoardLink;../../Shared/Bsp</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1081,6 +1081,11 @@
               <FileName>DJI_Motor.c</FileName>
               <FileType>1</FileType>
               <FilePath>../../Shared/Devices/DJI_Motor/DJI_Motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>DM_Motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../../Shared/Devices/DM_Motor/DM_Motor.c</FilePath>
             </File>
             <File>
               <FileName>PC_Comm.c</FileName>
