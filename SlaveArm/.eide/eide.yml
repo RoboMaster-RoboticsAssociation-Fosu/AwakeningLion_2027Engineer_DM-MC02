@@ -86,6 +86,7 @@ virtualFolder:
         - path: ../Shared/Devices/Remote_Control/Remote_Control.c
         - path: ../Shared/Devices/DM_Motor/DM_Motor.c
         - path: ../Shared/Devices/RS05_Motor/RS05_Motor.c
+        - path: ../Shared/Devices/QD4310_Motor/QD4310_Motor.c
         - path: ../Shared/Devices/PC_Comm/PC_Comm.c
       folders: []
     - name: Algorithm
@@ -180,6 +181,7 @@ targets:
         - ../Shared/Bsp
         - ../Shared/Devices/DM_Motor
         - ../Shared/Devices/RS05_Motor
+        - ../Shared/Devices/QD4310_Motor
         - ../Shared/Devices/Remote_Control
         - ../Shared/Algorithm/CRC
         - USB_DEVICE/App

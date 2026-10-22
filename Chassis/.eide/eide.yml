@@ -86,6 +86,7 @@ virtualFolder:
         - path: ../Shared/Devices/BMI088/BMI088driver.c
         - path: ../Shared/Devices/BMI088/BMI088Middleware.c
         - path: ../Shared/Devices/DJI_Motor/DJI_Motor.c
+        - path: ../Shared/Devices/QD4310_Motor/QD4310_Motor.c
         - path: ../Shared/Devices/PC_Comm/PC_Comm.c
       folders: []
     - name: Algorithm
@@ -184,6 +185,7 @@ targets:
         - ../Shared/Algorithm/PID
         - ../Shared/Devices/Remote_Control
         - ../Shared/Devices/DJI_Motor
+        - ../Shared/Devices/QD4310_Motor
         - ../Shared/Algorithm/CRC
         - USB_DEVICE/App
         - USB_DEVICE/Target

@@ -335,7 +335,7 @@
               <MiscControls>-Wno-ignored-attributes</MiscControls>
               <Define>USE_HAL_DRIVER,STM32H723xx,USE_PWR_LDO_SUPPLY</Define>
               <Undefine />
-              <IncludePath>../Core/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../../Shared/Drivers/CMSIS/Device/ST/STM32H7xx/Include;../../Shared/Drivers/CMSIS/Include;../../Shared/Drivers/CMSIS/DSP/Include;../../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/APP;../User/Bsp;../../Shared/Devices/DM_Motor;../../Shared/Devices/Remote_Control;../../Shared/Algorithm/CRC;../USB_DEVICE/App;../USB_DEVICE/Target;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../../Shared/Devices/PC_Comm;../../Shared/Protocol/DbgDisp;../../Shared/Protocol/VOFA;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/include;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../../Shared/Drivers/CMSIS/RTOS2/Include;../../Shared/Devices/RS05_Motor;../../Shared/Protocol/BoardLink;../../Shared/Bsp</IncludePath>
+              <IncludePath>../Core/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc;../../Shared/Drivers/STM32H7xx_HAL_Driver/Inc/Legacy;../../Shared/Drivers/CMSIS/Device/ST/STM32H7xx/Include;../../Shared/Drivers/CMSIS/Include;../../Shared/Drivers/CMSIS/DSP/Include;../../Shared/ThirdParty/FreeRTOS/ARM_CM4F_AC6;../User/APP;../User/Bsp;../../Shared/Devices/DM_Motor;../../Shared/Devices/Remote_Control;../../Shared/Algorithm/CRC;../USB_DEVICE/App;../USB_DEVICE/Target;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Core/Inc;../../Shared/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc;../../Shared/Devices/PC_Comm;../../Shared/Devices/QD4310_Motor;../../Shared/Protocol/DbgDisp;../../Shared/Protocol/VOFA;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/include;../../Shared/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2;../../Shared/Drivers/CMSIS/RTOS2/Include;../../Shared/Devices/RS05_Motor;../../Shared/Protocol/BoardLink;../../Shared/Bsp</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -1086,6 +1086,11 @@
               <FileName>RS05_Motor.c</FileName>
               <FileType>1</FileType>
               <FilePath>../../Shared/Devices/RS05_Motor/RS05_Motor.c</FilePath>
+            </File>
+            <File>
+              <FileName>QD4310_Motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>../../Shared/Devices/QD4310_Motor/QD4310_Motor.c</FilePath>
             </File>
           </Files>
         </Group>
