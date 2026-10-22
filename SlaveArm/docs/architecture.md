@@ -11,6 +11,9 @@ UART5 DBUS → RcSystem → InputTask → ArmTask → CAN1/CAN2 达妙、CAN3 RS
 固定任务：InputTask、ArmTask、ServiceTask。InputTask 周期 1 ms，ServiceTask 周期 10 ms。
 从臂保持六台达妙、两台 RS05 的现有 MIT 控制、Keil 目标调试和电机故障灯。
 
+遥控离线检查在同一临界区内取时并读取接收状态，使用该时刻继续处理就绪宽限期。避免 DMA 中断更新下一毫秒的有效帧后，被周期开始的旧时间误判为超时；原 200 ms 离线阈值保持不变。
+运行 `python SlaveArm/tests/run_rc_time_tests.py` 可验证真实离线检查函数的下一毫秒中断、上电 0→1 ms、200/201 ms 边界、未收首帧及 uint32 计时回绕。主机只替换时钟与临界区边界；UART/DMA 启动由完整固件构建验证，实际接收仍需上板验证。
+
 ## 板间通信
 
 USART10 使用现有循环 DMA 和流帧协议。发送完整遥控快照，接收底盘姿态快照；INS 仅是接收数据，不创建本地采样任务。

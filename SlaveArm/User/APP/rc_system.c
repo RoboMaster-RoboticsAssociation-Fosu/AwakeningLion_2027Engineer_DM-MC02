@@ -76,7 +76,7 @@ static void RC_DmaMemory0Complete(DMA_HandleTypeDef *hdma);
 static void RC_DmaMemory1Complete(DMA_HandleTypeDef *hdma);
 static void RC_DmaError(DMA_HandleTypeDef *hdma);
 static void RC_StopAndRequestRestart(UART_HandleTypeDef *huart);
-static void RC_UpdateOfflineState(uint32_t now_ms);
+static uint32_t RC_UpdateOfflineState(void);
 static void RC_ResetEdgeState(void);
 static void RC_UpdateInputEdges(const Remote_Info_t *remote);
 static uint32_t RC_GetSwitchEdge(uint8_t previous, uint8_t current);
@@ -85,14 +85,14 @@ static uint32_t RC_GetIwEdges(int16_t previous, int16_t current);
 /* Functions --------------------------------------------------------------- */
 void RcSystem_Process(void)
 {
-    const uint32_t now_ms = DWT_GetTimeMs();
+    uint32_t now_ms;
 
     if (g_rc_system.receive.restart_pending != 0U)
     {
         (void)RC_StartDmaDoubleBuffer();
     }
 
-    RC_UpdateOfflineState(now_ms);
+    now_ms = RC_UpdateOfflineState();
 
     if ((g_rc_system.receive.ready != 0U) &&
         (remote_ctrl.rc_lost == false))
@@ -371,11 +371,18 @@ static void RC_StopAndRequestRestart(UART_HandleTypeDef *huart)
     (void)HAL_UART_AbortReceive(huart);
 }
 
-static void RC_UpdateOfflineState(uint32_t now_ms)
+/**
+ * @brief 同一临界区取时并检查接收状态，返回本次判断使用的时刻。
+ * @note DMA ISR 可在临界区前更新下一毫秒的时间戳；先屏蔽再取时，
+ *       避免新鲜帧被无符号时间差误判离线。保持原 200 ms 超时边界。
+ */
+static uint32_t RC_UpdateOfflineState(void)
 {
     uint8_t timed_out = 0U;
+    uint32_t now_ms;
 
     taskENTER_CRITICAL();
+    now_ms = DWT_GetTimeMs();
     timed_out =
         ((g_rc_system.receive.has_valid_frame == 0U) ||
          ((uint32_t)(now_ms - g_rc_system.receive.last_valid_time_ms) >
@@ -394,6 +401,7 @@ static void RC_UpdateOfflineState(uint32_t now_ms)
         Remote_Active_Detect(&remote_ctrl);
     }
     taskEXIT_CRITICAL();
+    return now_ms;
 }
 
 /**
