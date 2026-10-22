@@ -1746,9 +1746,9 @@
               <FilePath>..\User\APP\vofa_system.c</FilePath>
             </File>
             <File>
-              <FileName>board_link.c</FileName>
+              <FileName>board_link_system.c</FileName>
               <FileType>1</FileType>
-              <FilePath>..\User\APP\board_link.c</FilePath>
+              <FilePath>..\User\APP\board_link_system.c</FilePath>
             </File>
           </Files>
         </Group>

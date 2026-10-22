@@ -127,7 +127,7 @@ virtualFolder:
         - path: User/APP/ins_task.c
         - path: User/APP/chassis_task.c
         - path: User/APP/input_task.c
-        - path: User/APP/board_link.c
+        - path: User/APP/board_link_system.c
         - path: User/APP/service_task.c
         - path: User/APP/led_system.c
         - path: User/APP/vofa_system.c

@@ -18,7 +18,7 @@
 #include "cmsis_os2.h"
 #include "fdcan.h"
 #include "pid.h"
-#include "board_link.h"
+#include "board_link_system.h"
 #include "task.h"
 
 #include <math.h>
@@ -225,7 +225,7 @@ static bool chassis_read_remote_command(float *vx_mm_s,
 
     if ((vx_mm_s == NULL) || (vy_mm_s == NULL) ||
         (vw_deg_s == NULL) ||
-        (!g_board_link.remote_valid || remote_ctrl.rc_lost))
+        (!g_board_link_system.remote_valid || remote_ctrl.rc_lost))
     {
         return false;
     }

@@ -3,7 +3,7 @@
  * @brief 遥控输入 → 本板许可快照；USART10 收发始终由本任务调度。
  */
 #include "input_task.h"
-#include "board_link.h"
+#include "board_link_system.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stm32h7xx_hal.h"
@@ -20,8 +20,8 @@ void InputTask_Run(void)
         uint8_t sw2;
         bool ready;
 
-        BoardLink_Process(HAL_GetTick());
-        ready = g_board_link.remote_valid && !remote_ctrl.rc_lost;
+        BoardLinkSystem_Process(HAL_GetTick());
+        ready = g_board_link_system.remote_valid && !remote_ctrl.rc_lost;
         sw2 = remote_ctrl.rc.s[REMOTE_SWITCH_SW2];
         if (ready)
         {

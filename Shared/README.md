@@ -32,7 +32,7 @@ SlaveArm、Chassis 和后续 MasterArm 的公共源码只在本目录维护。
 | MasterArm | 当前仅保留目录说明；完成业务设计后引用需要的公共库 |
 
 BoardLink 的帧格式和两种负载编解码各保存一份。Remote_Info_t 和 INS_t 也使用共同定义。
-接收/发送哪种消息、如何更新快照和如何通知控制任务，仍由各板的 board_link.c 和 input_task.c 决定。
+接收/发送哪种消息、如何更新快照和如何通知控制任务，仍由各板的 board_link_system.c 和 input_task.c 决定。
 从臂机械臂专用算法恢复在 SlaveArm/User/Algorithm/Arm，底盘腿部 VMC 算法恢复在 Chassis/User/Algorithm/VMC；当前均未加入固件编译。
 
 ## 工程保留项

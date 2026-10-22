@@ -5,7 +5,7 @@
  *       范围仅机械臂目标输入，待新自定义控制器正式接入时移除该调试入口。
  */
 #include "input_task.h"
-#include "board_link.h"
+#include "board_link_system.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "stm32h7xx_hal.h"
@@ -40,7 +40,7 @@ void InputTask_Run(void)
         g_input_task.arm_command.enabled = !g_input_task.locked;
         g_input_task.arm_command.freeze_targets = !ready && !g_input_task.locked;
         ArmTask_Notify(&g_input_task.arm_command);
-        BoardLink_Process(HAL_GetTick());
+        BoardLinkSystem_Process(HAL_GetTick());
         vTaskDelayUntil(&wake_time, pdMS_TO_TICKS(1U));
     }
 }
