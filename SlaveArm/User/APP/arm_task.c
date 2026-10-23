@@ -31,7 +31,44 @@ ArmTask_t g_arm_task = {
         [0] = RS05_MOTOR_CREATE(RS05_MOTOR_PROTOCOL_MIT, 0x07U, 0xFDU),
         [1] = RS05_MOTOR_CREATE(RS05_MOTOR_PROTOCOL_MIT, 0x08U, 0xFDU),
     },
-    .control = {.state = ARM_CONTROL_DISABLED},
+    .control = {
+        /* 电机内部 MIT PD 初值；注释为协议范围，MIT 无 Ki 参数。 */
+        .mit_gain = {
+            [ARM_JOINT_YAW] = { /* J4340 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_PITCH1] = { /* J10010L */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_ROLL1] = { /* J4340 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_PITCH2] = { /* J4340 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_ROLL2] = { /* J4310 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_PITCH3] = { /* J4310 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_ROLL3] = { /* RS05 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+            [ARM_JOINT_GRIP] = { /* RS05 */
+                .kp = 0.0f, /* 0~500 N.m/rad */
+                .kd = 0.0f, /* 0~5 N.m.s/rad */
+            },
+        },
+        .state = ARM_CONTROL_DISABLED,
+    },
 };
 
 /* 两个厂商各自保留驱动实例，不建立通用电机注册表或转发适配函数。 */

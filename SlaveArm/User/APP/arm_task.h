@@ -35,11 +35,11 @@ typedef struct
     bool freeze_targets;
 } ArmTaskCommand_t;
 
-/** @brief 电机内部运控增益，初值均为 0，必须通过 Keil 逐轴设置。 */
+/** @brief 电机内部运控增益，在 arm_task.c 设置初值，可通过 Keil 逐轴调整。 */
 typedef struct
 {
-    float kp;
-    float kd;
+    float kp; /* N.m/rad */
+    float kd; /* N.m.s/rad */
 } ArmMitGain_t;
 
 /** @brief owner 在临界区提取的运动反馈，不把厂商不同状态码混为一谈。 */
