@@ -123,6 +123,7 @@ virtualFolder:
     - name: APP
       files:
         - path: User/APP/arm_task.c
+        - path: User/APP/arm_usb_system.c
         - path: User/APP/input_task.c
         - path: User/APP/board_link_system.c
         - path: User/APP/rc_system.c
@@ -136,6 +137,7 @@ virtualFolder:
         - path: ../Shared/Protocol/VOFA/vofa.c
         - path: ../Shared/Protocol/BoardLink/board_link_protocol.c
         - path: ../Shared/Protocol/BoardLink/board_link_payload.c
+        - path: ../Shared/Protocol/ArmUsb/arm_usb_protocol.c
       folders: []
     - name: bsp
       files:
@@ -192,6 +194,7 @@ targets:
         - ../Shared/Protocol/DbgDisp
         - ../Shared/Protocol/VOFA
         - ../Shared/Protocol/BoardLink
+        - ../Shared/Protocol/ArmUsb
         - .cmsis/include
         - MDK-ARM/RTE/_CtrlBoard-H7_IMU
       libList: []

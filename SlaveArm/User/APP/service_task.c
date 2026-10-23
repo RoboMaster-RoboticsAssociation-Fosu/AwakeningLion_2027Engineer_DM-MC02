@@ -11,6 +11,7 @@
 #include "led_system.h"
 #include "stm32h7xx_hal.h"
 #include "vofa_system.h"
+#include "arm_usb_system.h"
 
 #define SERVICE_TASK_PERIOD_MS 10U
 
@@ -20,6 +21,7 @@ void ServiceTask_Run(void)
     {
         LedSystem_Step(HAL_GetTick());
         VofaSystem_Step();
+        ArmUsbSystem_Step();
 
         osDelay(SERVICE_TASK_PERIOD_MS);
     }

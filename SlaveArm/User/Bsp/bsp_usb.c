@@ -1,73 +1,33 @@
-/**
- ******************************************************************************
- * @file    bsp_usb.c
- * @version V1.0.0
- * @date    2026.03.04
- * @brief   USB通信功能函数
- * @encoding UTF-8
- ******************************************************************************
- * @attention
- * * 无
- ******************************************************************************
- */
-
-/* Includes ---------------------------------------------------------------- */
+/** @file bsp_usb.c @brief USB CDC 持久发送缓冲与忙状态处理，不承担业务解析。 */
 #include "bsp_usb.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
 #include "usbd_cdc_if.h"
 #include "usb_device.h"
-#include "PC_Comm.h"
-/* Defines ----------------------------------------------------------------- */
+#include <string.h>
 
-/* Global variable --------------------------------------------------------- */
-static uint8_t *USB_Curruct_Buf;
 extern USBD_HandleTypeDef hUsbDeviceHS;
-extern uint8_t UserRxBufferHS[APP_RX_DATA_SIZE];
+extern uint8_t UserTxBufferHS[APP_TX_DATA_SIZE];
 
-__attribute__((section (".AXI_SRAM"))) uint8_t USB_RxBuf[2][USB_BUFF_SIZE];
-
-/* Static Fun -------------------------------------------------------------- */
-
-/* Functions --------------------------------------------------------------- */
-/**
- * @brief  USB发送数据
- * @param  Data: 数据指针
- * @param  Len: 数据长度
- * @return 无
- * @note   无
- */
-void USB_Transmit_Data(uint8_t* Data, uint16_t Len)
+bool USB_Transmit_Data(const uint8_t *data, uint16_t length)
 {
-    /* 发送数据 */
-    CDC_Transmit_HS(Data,Len);
-}
+    USBD_CDC_HandleTypeDef *cdc;
+    bool submitted = false;
 
-/* Private functions ------------------------------------------------------- */
-
-/* Interrupt functions ----------------------------------------------------- */
-/**
- * @brief  USB接收回调函数
- * @param  Len: 接收数据长度
- * @return 无
- * @note   使用双缓冲机制
- */
-void USB_ReceiveCallback(uint16_t Len)
-{
-    uint8_t *pDataBuf;
-    
-    pDataBuf = USB_Curruct_Buf;  // 这个缓冲区刚接收完数据
-    
-    if(USB_Curruct_Buf == USB_RxBuf[0]) {
-        USB_Curruct_Buf = USB_RxBuf[1];
-    } else {
-        USB_Curruct_Buf = USB_RxBuf[0];
+    if ((data == NULL) || (length == 0U) || (length > APP_TX_DATA_SIZE))
+    {
+        return false;
     }
-    
-    USBD_CDC_SetRxBuffer(&hUsbDeviceHS, USB_Curruct_Buf);
-    USBD_CDC_ReceivePacket(&hUsbDeviceHS);
-    
-    if (pDataBuf != NULL) {
-        PC_Info_Update(pDataBuf, &PC_RxInfo); 
+    /* 检查、复制、提交在同一临界区完成；USB 复位 ISR 不会使 cdc 指针失效。 */
+    taskENTER_CRITICAL();
+    cdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceHS.pClassData;
+    if ((hUsbDeviceHS.dev_state == USBD_STATE_CONFIGURED) &&
+        (cdc != NULL) && (cdc->TxState == 0U))
+    {
+        memcpy(UserTxBufferHS, data, length);
+        submitted = CDC_Transmit_HS(UserTxBufferHS, length) == USBD_OK;
     }
+    taskEXIT_CRITICAL();
+    return submitted;
 }
-
-/* ------------------------------------------------------------------------- */

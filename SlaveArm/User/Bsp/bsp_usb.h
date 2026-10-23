@@ -1,35 +1,22 @@
+/** @file bsp_usb.h @brief 从臂 USB CDC 单帧发送；发送缓冲生命周期由本模块负责。 */
+#ifndef BSP_USB_H
+#define BSP_USB_H
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
- ******************************************************************************
- * @file    bsp_usb.h
- * @version V1.0.0
- * @date    2026.03.04
- * @brief   USB通信功能函数声明
- * @encoding UTF-8
- ******************************************************************************
- * @attention
- * * 无
- ******************************************************************************
+ * @brief 任务上下文发送一帧；先检查配置/空闲状态，再复制到 CDC 持久缓冲。
+ * @return true 表示提交成功；未配置、忙、空指针或非法长度返回 false，不覆盖在途数据。
+ * @note 不等待完成、不重试；调用返回后调用者可立即复用 data。
  */
+bool USB_Transmit_Data(const uint8_t *data, uint16_t length);
 
-/* Define to prevent recursive inclusion ------------------------------------ */
-#ifndef __BSP_USB_H
-#define __BSP_USB_H
-
-/* Includes ----------------------------------------------------------------- */
-#include "cmsis_os2.h"
-
-/* Defines ------------------------------------------------------------------ */
-#define USB_BUFF_SIZE   (APP_RX_DATA_SIZE/2)	/* USB缓冲区大小 */
-
-/* Enums -------------------------------------------------------------------- */
-
-/* Structs ------------------------------------------------------------------ */
-
-/* Externs ------------------------------------------------------------------ */
-
-/* Functions ---------------------------------------------------------------- */
-void USB_Transmit_Data(uint8_t* Data, uint16_t Len);
-void USB_ReceiveCallback(uint16_t Len);
-
-/* -------------------------------------------------------------------------- */
-#endif /* __BSP_USB_H */
+#ifdef __cplusplus
+}
+#endif
+#endif /* BSP_USB_H */

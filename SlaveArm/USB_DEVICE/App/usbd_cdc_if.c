@@ -22,7 +22,7 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-#include "bsp_usb.h"
+#include "arm_usb_system.h"
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -155,6 +155,7 @@ static int8_t CDC_Init_HS(void)
 {
   /* USER CODE BEGIN 8 */
   /* Set Application Buffers */
+  ArmUsbSystem_OnUsbReset();
   USBD_CDC_SetTxBuffer(&hUsbDeviceHS, UserTxBufferHS, 0);
   USBD_CDC_SetRxBuffer(&hUsbDeviceHS, UserRxBufferHS);
   return (USBD_OK);
@@ -169,6 +170,7 @@ static int8_t CDC_Init_HS(void)
 static int8_t CDC_DeInit_HS(void)
 {
   /* USER CODE BEGIN 9 */
+  ArmUsbSystem_OnUsbReset();
   return (USBD_OK);
   /* USER CODE END 9 */
 }
@@ -264,8 +266,14 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
-  USB_ReceiveCallback(*Len);
-  return (USBD_OK);
+  if ((Buf == NULL) || (Len == NULL))
+  {
+    return (USBD_FAIL);
+  }
+  /* 使用本次真实缓冲和长度；业务 owner 复制后即可立即重新接收。 */
+  ArmUsbSystem_OnUsbRx(Buf, *Len);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceHS, Buf);
+  return (int8_t)USBD_CDC_ReceivePacket(&hUsbDeviceHS);
   /* USER CODE END 11 */
 }
 
@@ -280,7 +288,14 @@ uint8_t CDC_Transmit_HS(uint8_t* Buf, uint16_t Len)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 12 */
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceHS.pClassData;
+  USBD_CDC_HandleTypeDef *hcdc;
+  /* 未枚举/断开时类实例可能为空，不能先解引用 TxState。 */
+  if ((hUsbDeviceHS.dev_state != USBD_STATE_CONFIGURED) ||
+      (hUsbDeviceHS.pClassData == NULL) || (Buf == NULL) || (Len == 0U))
+  {
+    return USBD_FAIL;
+  }
+  hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceHS.pClassData;
   if (hcdc->TxState != 0){
     return USBD_BUSY;
   }
