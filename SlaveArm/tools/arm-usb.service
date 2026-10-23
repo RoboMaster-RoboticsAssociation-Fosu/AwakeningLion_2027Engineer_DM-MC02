@@ -1,0 +1,15 @@
+[Unit]
+Description=Slave arm USB CDC communication
+After=systemd-udevd.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=xuyan
+WorkingDirectory=/home/xuyan/arm_usb
+ExecStart=/usr/bin/python3 -u /home/xuyan/arm_usb/arm_usb.py --continuous --port /dev/serial/by-id/usb-STMicroelectronics_STM32_Virtual_ComPort_306235523231-if00
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
